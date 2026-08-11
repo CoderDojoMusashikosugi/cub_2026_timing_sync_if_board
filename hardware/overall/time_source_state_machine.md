@@ -12,10 +12,13 @@
 
 - U2 `INT/SQW`は`INTCN=0`、`RS2:RS1=00`として1 Hz square waveに設定する。
 - `BBSQW=0`とし、本基板主電源OFF中は`INT/SQW`をHigh-Zにする。CR2032はcalendar/TCXO保持だけに使用する。
-- U2 `32kHz`からMCU PB10への回路接続は残す。初回firmwareで常時計測を有効にするかは[`open_issues.md`](./open_issues.md)のOI-002で決定する。
+- U2 `32kHz`からMCU PB10（TIM2_CH3）への回路接続は残す。32 kHzと1 Hzのどちらを周波数基準に使うかは[`open_issues.md`](./open_issues.md)のOI-002で決定する。
+- **DS3231を周波数基準として常時規律することは選択肢ではなく、要求R-013（GNSS消失後5分で1 ms以下）の成立条件である。** 基板にHSE/LSE水晶がなくMCUはHSI16で動作するため、規律を止めた構成では要求を満たせない。根拠は[`../../plan/design.md`](../../plan/design.md) §6.6を正とする。
+- `32kHz`と`INT/SQW`はいずれもopen-drain出力で、立上りは10 kOhm pull-upによるRC波形になる。**両方とも立下りedgeで検出する。**
 - 起動時にOscillator Stop Flag（OSF）を確認する。OSF=1、RTC読出し異常、日時範囲外、または電池交換後未設定ならRTC時刻は無効とする。
 - RTC-only起動では1 Hz `INT/SQW` edgeをローカル秒境界としてMCU timer位相を初期化し、edge直後にcalendarを読み出してUTC秒を対応付ける。出力は2回連続して単調な秒更新を確認した後にenableする。
-- GNSS有効中はまず`INT/SQW` 1 Hz edgeとMCU timerのoffsetを校正し、holdover開始時に最後の有効な補正値を引き継ぐ。32 kHz補正を有効化した場合は、GNSS PPSに対する32 kHzの周波数offsetも継続推定する。
+- GNSS有効中はまず`INT/SQW` 1 Hz edgeとMCU timerのoffsetを校正し、holdover開始時に最後の有効な補正値を引き継ぐ。
+- holdoverへ引き継ぐのは**MCU timerとDS3231の周波数比**である。GNSS PPS由来のtimer補正値そのものはHSI16に対する補正であり、ダイ温度が動いた時点で無効になるため5分の保持には使えない。この区別を実装で崩さない。
 
 ## 状態
 
