@@ -10,10 +10,13 @@
 
 ## Clock・内蔵RTC設定
 
-- U2 26 MHz TCXOをHSE bypassへ入力し、PLLM=5、PLLN=24、PLLR=2でSYSCLK/TIM2=62.4 MHzとする。HSE CSSを有効化する。
-- X1 32.768 kHz LSEをSTM32内蔵RTCのclock源とし、CR2032からVBAT domainを保持する。LSEはcalendar/backup専用で、powered holdoverのPPS周波数基準には使わない。
-- backup registerに固定signature、version、calendar CRC、最後に検証済みのTCXO補正値と同期時刻を保存する。更新はCRCを最後に書く二段階手順とし、中途半端な書込みを有効扱いしない。
-- 起動時はsignature/version/CRC、LSERDY、backup-domain reset flag、calendar範囲、単調なsubsecond registerを確認する。一つでも異常ならRTC時刻を無効とする。
+- U2 26 MHz TCXOをHSE bypassへ入力し、PLLM=5、PLLN=24、PLLR=2でSYSCLK/TIM2=62.4 MHzとする。起動時はVoltage Range 1へ設定して`VOSF=0`を確認し、Flash latencyを2 wait stateへ上げてからPLL/SYSCLKを切り替える。HSE CSSを有効化する。
+- HSE bypass入力はPF0で26 MHz、duty 45～55 %を満たすことを試作合否条件とし、条件外の基板は不合格とする。
+- X1 32.768 kHz LSEをSTM32内蔵RTCのclock源とし、CR2032からVBAT domainを保持する。SC-32SのESR最大70 kOhm、C0 typ 1 pF、CL 7 pFから求めた`gmcrit`概算0.76 uA/Vに対し、`LSEDRV=10`（medium-high、`Gmcritmax` 1.7 uA/V）を使用する。LSEはcalendar/backup専用で、powered holdoverのPPS周波数基準には使わない。
+- STM32G0B1 errata ES0548 §2.2.1の回避として`LSECSSON=0`とし、LSE CSSは使用しない。LSE CSSはVBAT mode中に動作しないため、主電源断中のLSE継続を保証する判定にも使用しない。
+- 使用する全backup registerに固定signature、version、最後に検証済みのTCXO補正値、同期時刻、application payload CRCを保存する。更新はCRCを最後に書く二段階手順とし、中途半端な書込みを有効扱いしない。これとは別に、`RCC_BDCR`の設定bitとRTC設定registerを対象としたRTC-domain configuration CRCを保存する。LSERDY、calendar、SSRなどhardwareが更新するstatus/data bitはCRC対象から除外する。
+- STM32G0B1 errata ES0548 §2.2.11への対策として、起動処理の最初かつreset flagをclearする前に`RCC_CSR.BORRSTF`を保存し、signature/version、両CRC、`RTC_ICSR.INITS`、`RCC_BDCR`のRTCSEL/LSEON/LSERDY/RTCEN、calendar範囲、単調なSSRを検証する。CRC不一致または設定不整合があれば`RCC_BDCR.BDRST`をset、read-back、clearしてbackup domainを初期化し、RTC時刻を無効とする。正常時はBDRSTを発行せず保持時刻を使い、検証後にreset flagをclearする。
+- `RTC_VALID`は起動時に読み出せたRTC-domainの整合性を示すだけで、VBAT期間中にLSEが停止しなかったことや電池残量を証明しない。
 - RTC-only起動ではRTC calendarとsubsecond register（SSR）を連続して整合読出しし、1 Hz wakeup eventを補助にTIM2の秒内位相を初期化する。2回連続した単調更新を確認してから出力をenableする。
 - GNSS有効中はPPSからTCXOの実偏差を連続推定し、ARR補正値を更新する。holdover開始時は最後に検証済みの補正値をそのまま引き継ぐ。
 - R-013（GNSS消失後5分で1 ms以下）は主電源ON、TCXO/TIM2継続動作中のholdover要求である。主電源OFF中の時刻精度はLSEの±20 ppm級であり、同じサブms要求を適用しない。
@@ -48,7 +51,8 @@
 
 ## 文書段階の試験項目
 
-- 有効backup、signature/CRC異常、LSERDY失敗、電池なしでの起動状態と出力High-Z。
+- 有効backup、signature/application CRC異常、RTC-domain configuration CRC異常、`INITS=0`、LSERDY失敗、電池なしでの起動状態を確認する。異常時は必要なBDRST sequenceを実行して時刻無効、出力High-Zとなること。
+- PF0で26 MHz、duty 45～55 %を0～40 ℃で確認し、Voltage Range 1/Flash 2 wait stateの順序を含むclock初期化試験を行う。
 - HSE停止、PLL unlock、TCXO enable異常で`FAULT_CLOCK`へ入り、PPS/NMEAがHigh-Zになること。
 - GNSS PPSのみ、NMEAのみ、checksum異常、RMC=`V`、両方喪失時の遷移。
 - GNSS喪失5分後のPPS誤差1 ms以下。

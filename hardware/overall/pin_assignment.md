@@ -158,7 +158,7 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
 
 | 項目 | 構成 | 備考 |
 |---|---|---|
-| SYSCLK / timer clock源 | 26 MHz TCXO + HSE bypass + PLL、62.4 MHz | PLLM=5、PLLN=24、PLLR=2。PF0入力、PF1 NC |
+| SYSCLK / timer clock源 | 26 MHz TCXO + HSE bypass + PLL、62.4 MHz | PLLM=5、PLLN=24、PLLR=2。PF0入力はduty 45～55 %、PF1 NC。Voltage Range 1、Flash 2 wait state |
 | timer clockの周波数基準 | **Q2C26000V2D4B2、±0.5 ppm** | 2.8 V TCXOから3.3 V Schmitt buffer経由でTIM2を直接駆動 |
 | UTCの絶対基準 | GNSS PPS + 検証済みNMEA | GNSS有効中はDPLLで位相・周波数を規律する |
 | USB clock | HSI48 + CRS | **CRSはUSB clockのみを規律し、timer clockには影響しない。水晶の要否はUSBとは独立した問題である。** CRSの同期源であるSOFは列挙後にしか来ないため、初回列挙はHSI48の工場trim精度で通す必要がある |
@@ -304,8 +304,9 @@ BT1 CR2032- -> GND
 ```
 
 - U5入出力へ各1 uF、U2/U6の電源pin直近へ各100 nFを置く。`+2V8_CLK`はU2専用とする。
-- X1のCL=7 pFに対し基板寄生を約2 pFと仮定し、C22/C23は10 pFを初期値とする。試作で8.2～12 pFの範囲を調整し、LSE drive capabilityと起動余裕を確認する。
+- X1のCL=7 pFに対し基板寄生を約2 pFと仮定し、C22/C23は10 pFを初期値とする。SC-32SのESR最大70 kOhm、C0 typ 1 pF、CL 7 pFから`gmcrit`は概算0.76 uA/Vとなるため、STM32は`LSEDRV=10`（medium-high、`Gmcritmax` 1.7 uA/V）で使用する。試作で8.2～12 pFの範囲を調整し、起動余裕を確認する。
 - U2→U6→PF0はGND plane上を短く配線し、R45はPF0直近へ置く。clock配線のtest padは小型・stub最小とする。
+- X1とC22/C23はPC14/PC15直近へ配置し、X1直下および発振loop内には信号配線やcopper pourを通さない。PC13はNCのままとする。
 - U2の個別pin配置、enable/standby極性、起動時間、±0.5 ppmの温度範囲はメーカー個別datasheetとEasyEDA libraryを発注前に照合する。
 - HSE Clock Security Systemを有効化する。HSE/PLL faultでHSIへ切り替わった場合、時刻出力は継続せず全`OE_N`をHighにして`FAULT_CLOCK`へ遷移する。
 
@@ -314,7 +315,7 @@ BT1 CR2032- -> GND
 - SW1 `RESET`は`NRST`（pin 12）とGND間。R42 10 kOhmで`NRST`を`+3V3`へpull-upし、C18 100 nFを`NRST`-GND間へ配置する。
 - SW2 `BOOT`は`+3V3`からR44 1 kOhmを介してPA14-BOOT0へ接続する。R43 100 kOhmでPA14-BOOT0をGNDへpull-downする。
 - SW1/SW2は小型Basic `TS-1088-AR02016` / C720477、SMD 4 x 3 mmを使用する。
-- PA14はSWCLK兼用である。SWD probe接続中はSW2を押さず、BOOT操作時はprobeを外す。
+- PA14はSWCLK兼用である。STM32G0B1 errata ES0548 §2.2.8により、debug接続後はprobeを外しただけではBOOT0 sampling状態が戻らない。SWD probeを外し、USBを含む全主電源を切って完全power cycleした後にSW2 + SW1のBOOT操作を行う。
 - option byteを`nBOOT_SEL=0`、`nBOOT1=1`として外部BOOT0とsystem-memory bootを有効化する（AN2606の一般表では`nBOOT_SEL`を`nBOOT0_SEL`と表記）。通常起動はBOOT Low、system-memory USB DFUはSW2を押したままSW1を押して離し、その後SW2を離す。
 - PA15の専用`DFU_REQ_N` buttonは設けない。正常firmwareからはUSB CDC commandによるsystem bootloader移行を実装し、firmware異常時はSW1/SW2を使用する。
 - SWD recovery用TP1～TP5（SWDIO、SWCLK、NRST、3V3、GND）は維持する。
@@ -331,7 +332,7 @@ BT1 CR2032- -> GND
 1. 新品基板をUSBへ接続し、空flash判定によりsystem bootloaderが起動してDFU deviceとして見えることを確認する。DFUで初回firmwareを書き込む。
 2. **書込み後はUSBを抜き差しして電源を入れ直す。** `EMPTY`フラグのクリアにはpower on resetまたは`OBL_LAUNCH`が必要で、**system reset（SW1）では clear されない。** SW1だけを押しても新firmwareは起動せず再びbootloaderへ入る。
 3. option byteを`nBOOT_SEL=0`、`nBOOT1=1`へ設定し、SW2 + SW1によるDFU移行を有効にする。BOOT0はNRSTの立上りedgeでサンプリングされるため、SW2を押したままSW1を押して離す手順が正しい。
-4. 上記が失敗した場合はTP1～TP5経由のSWDで書き込む。
+4. 上記が失敗した場合はTP1～TP5経由のSWDで書き込む。SWD使用後にBOOT+RESETを再試行するときは、probeを外して全主電源を完全power cycleしてから行う。
 
 ## firmware初期化の必須項目
 
@@ -343,11 +344,11 @@ BT1 CR2032- -> GND
 | VREFBUF | VREF+を外部から3.3 Vで駆動するため有効化しない |
 | `PWR_CR2`の`PVM_VDDIO2[2:0]` | **`110`（Monitoring bypassed; IOs enabled）を設定する。** reset値000は「IOs in isolation mode」であり、USB・SWD・AUX1/AUX2 UART・VLP/Mid TXのOE_NがVDDIO2 domainに属する。上記「VDDIO2 domainのI/O」参照 |
 | `SYSCFG_CFGR1`の`UCPD1_STROBE` / `UCPD2_STROBE` | **起動時にstrobeしてdead-battery pull-downを無効化する。** DS13560 Table 12 note 4により、reset時PA8/PB15/PD0/PD2にpull-downが present し得る（PA9/PA10/PD1/PD3の電圧に依存）。PA8/PB15は未使用、PD0～PD3はtest padのため現状は無害だが、test padを使う場合に必要 |
-| clock tree | HSE bypass、HSE=26 MHz、PLLM=5、PLLN=24、PLLR=2、SYSCLK/TIM2=62.4 MHzを設定。HSE CSSを有効化する |
-| 内蔵RTC | LSEをclock源とし、backup registerにsignature、calendar CRC、TCXO補正値を保存する。PC13へTAMP/RTC_OUTを割り付けない |
+| clock tree | HSE bypass、HSE=26 MHz、PLLM=5、PLLN=24、PLLR=2、SYSCLK/TIM2=62.4 MHzを設定。Voltage Range 1の`VOSF=0`確認後、Flashを2 wait stateへ設定してからSYSCLKを切り替える。PF0 duty 45～55 %を前提とし、HSE CSSを有効化する |
+| 内蔵RTC | LSEをclock源とし、`LSEDRV=10`、`LSECSSON=0`とする。backup registerにsignature/version、TCXO補正値、同期時刻、application payload CRC、RTC-domain configuration CRCを保存する。PC13へTAMP/RTC_OUTを割り付けない |
 | timer edge極性 | GNSS PPSはU4Aで反転するためTIM2_CH1 falling-edge capture |
 | clock規律 | GNSS有効中はCH1 PPSからTCXO実偏差と位相を推定する。holdoverでは最後に検証済みのARR補正値を保持する |
 | UART baud | TCXO/PLL由来。通常はBRRの動的補正不要 |
 | TIM2構成 | `ARR = 62399999`、ARPE有効、`CCR2 = 6240000`（High幅100 ms固定）。**周波数補正と位相補正はいずれもARRで行う。** |
-| RTC有効性 | backup signature/CRC、LSERDY、backup reset、calendar範囲を確認する。無効なら外部へ時刻を出さない |
+| RTC有効性 | 起動処理の最初かつreset flag clear前に`BORRSTF`を保存し、signature/version、両CRC、`INITS`、RTCSEL/LSEON/LSERDY/RTCEN、calendar範囲、SSR単調性を確認する。CRC/設定異常ではBDRSTをset/read-back/clearし、外部へ時刻を出さない。正常確認後にreset flagをclearする。`RTC_VALID`は主電源断中のLSE連続動作や電池残量を保証しない |
 | clock fault | HSE/PLL異常時はHSIへ診断退避し、全`OE_N`をHigh、`FAULT_CLOCK`へ遷移する |

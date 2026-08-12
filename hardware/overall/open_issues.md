@@ -2,7 +2,7 @@
 
 - 更新日: 2026-08-12
 - 対象: 初回試作
-- 状態: DR-033のclock再設計を正本文書へ反映済み。OI-002/OI-004/OI-005/OI-007/OI-008は解決した。残る判断と実測項目を以下に示す。
+- 状態: DR-033のclock再設計とDR-034の再レビュー是正を正本文書へ反映済み。OI-002/OI-004/OI-005/OI-007/OI-008は解決した。残る判断と実測項目を以下に示す。
 
 ## 判断待ち
 
@@ -20,7 +20,7 @@
 |---|---|---|
 | OI-002 | DR-033で旧DS3231 32 kHz captureを廃止し、26 MHz TCXOをPF0/HSE bypassへ直接入力する | timer clock自体を±0.5 ppm化し、CH3 captureと比率推定を不要にする |
 | OI-004 | DR-033でPF0を`CLK_26M`、PF1をNC、PC14/PC15をLSEへ確定する | HSE bypass TCXOと内蔵RTC/LSEにより高精度holdoverとbattery-backed calendarを分離する |
-| OI-005 | 「RTC電池状態」は電圧値ではなく`RTC_VALID/INVALID`とする | backup signature/version/CRC、LSERDY、backup reset、calendar範囲から判定。ADC分圧は追加しない |
+| OI-005 | 「RTC電池状態」は電圧値ではなく`RTC_VALID/INVALID`とする | 使用する全backup registerのsignature/versionとapplication payload CRC、RTC-domain configuration CRC、`INITS`、RTCSEL/LSEON/LSERDY/RTCEN、calendar範囲、SSR単調性から判定する。power-on時の不整合はES0548 §2.2.11のBDRST sequenceで初期化する。これはVBAT期間中のLSE連続動作や電池残量を保証しない。ADC分圧は追加しない |
 | OI-007 | VLPのR15/R16は10 Ohm、その他の出力は33 Ohmとする | VLPは初回実力評価とし、10 Ohmで不要な電圧降下を小さくする |
 | OI-008 | 初回は3.3 V `74LVC125A`出力の実測判定とし、専用driverを追加しない | 1.5 kOhm負荷とVLP実機で判定し、不合格なら次版でdriverを再設計する。未規定動作点の補間値は保証根拠に使わない |
 
