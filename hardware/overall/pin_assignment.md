@@ -15,12 +15,12 @@ LQFP-64再割当へ適用した確定事項:
 
 - GNSS PPS/NMEA、Jetson/AUX入力5回路はBasicの`74HC14D,653` / `C5605` x1へ集約する。UART入力は各USARTの`RXINV`、PPS入力は反転edge captureを使う。各U4入力nodeには未接続時biasを設ける。
 - 3.3 V PPS/UART出力の`74LVC125A`はU7/U8/U12の3個とし、J3～J8の全12出力を担当する。U7C/U7DをVLP-32CのPPS/NMEAへ使用する。
-- VLP向け論理反転はUSARTの`TXINV`で行う。試作簡略化により専用U5/U6/U9と`+4V7_VLP`は使用しない。
+- VLP向け論理反転はUSARTの`TXINV`で行う。旧VLP専用driverと`+4V7_VLP`は使用しない。**reference U5/U6はDR-033でclock LDO/bufferへ再割当した。**
 - VLP公式条件はHigh >3.0 Vかつ<5.0 V、Low <1.2 V、High時2 mA供給である。3.3 V `74LVC125A`にはこの組合せの直接min保証点がないため、J4を2 mA負荷で実測して試作合否を判定する。
-- GH信号ESD footprintは設けない。出力は33 Ohm、HC14入力は4.7 kOhmを初期値とする。
+- GH信号ESD footprintは設けない。通常出力は33 Ohm、VLPの2出力は10 Ohm、HC14入力は4.7 kOhmを初期値とする。
 - USB ESDは実装し、VBUS PTC/TVSはfootprintを残して初回DNPとする。F1と並列のR36 `0603WAF0000T5E` / C21189を実装してVBUSを導通させる。
 - DR-002対応として、`PPS_OE_N`はPB1、`SPR_TX_OE_N`はPB2へ割り当てる。PB1/PB2はDS13560 Table 12 note 4の条件付きreset pull-down対象外であり、reset中は外付け100 kOhm pull-upにより74LVC125AをHigh-Zへ固定する。
-- DR-014対応として、生成PPSはPA6/TIM3_CH1ではなく**PC5/TIM2_CH2**から出力する。TIM3は16-bitで64 MHzから1 Hzを生成できないため、32-bitのTIM2へ集約する。
+- DR-014対応として、生成PPSはPA6/TIM3_CH1ではなく**PC5/TIM2_CH2**から出力する。TIM3は16-bitで62.4 MHzから高分解能の1 Hzを生成できないため、32-bitのTIM2へ集約する。
 - DR-018対応として、VREF+は`+3V3`へ直結し100 nFを付ける。`+3V3_A`は廃止する。ADCを使用しないためアナログrailを分離しない。VREF+を外部駆動するのでVREFBUFは有効化しない。
 
 ## VBUS電源経路
@@ -42,15 +42,15 @@ J1 VBUS -> VBUS_RAW -> (F1 || R36) -> VBUS_PROTECTED -> U3 / board loads
 |---:|---|---|---|---|
 | 1 | PC11 | GPIO | `NC_PC11` | 未使用、回路図上NC |
 | 2 | PC12 | GPIO | `NC_PC12` | 未使用、回路図上NC |
-| 3 | PC13 | GPIO | `RTC_INT_N` | DS3231 INT/SQW、1 Hz、falling-edge検出。**入力専用で使う**（下記PC13制約） |
-| 4 | PC14-OSC32_IN | GPIO | `NC_PC14` | 未使用、回路図上NC。LSEは使用しない |
-| 5 | PC15-OSC32_OUT | GPIO | `NC_PC15` | 未使用、回路図上NC。LSEは使用しない |
-| 6 | VBAT | Power | `+3V3` | MCU backup domain。RTC電池とは分離。100 nF |
+| 3 | PC13 | GPIO | `NC_PC13` | 未使用、回路図上NC。RTC_OUT/TAMPへ割り付けない |
+| 4 | PC14-OSC32_IN | LSE | `LSE_IN` | X1 SC-32S、C22 load capacitor |
+| 5 | PC15-OSC32_OUT | LSE | `LSE_OUT` | X1 SC-32S、C23 load capacitor |
+| 6 | VBAT | Power | `VBAT_RTC` | BT1 CR2032正極。100 nF、充電禁止 |
 | 7 | VREF+ | Power | `+3V3` | 100 nF。VDDA >= 2 VのときVREF+は2 V～VDDAの範囲が要求されるため`+3V3`直結で適合。VREFBUFは有効化しない |
 | 8 | VDD/VDDA | Power | `+3V3` | 本パッケージ唯一のVDD。VDDAは内部でVDDへ結線されるためVDDA専用decouplingは不要。100 nF + bulk |
 | 9 | VSS/VSSA | Power | `GND` | 本パッケージ唯一のVSS |
-| 10 | PF0-OSC_IN | GPIO | `TP_SPARE0` | spare/test pad。HSE水晶を採用する場合はHSE_IN（OI-004） |
-| 11 | PF1-OSC_OUT | GPIO | `TP_SPARE1` | spare/test pad。HSE水晶を採用する場合はHSE_OUT（OI-004） |
+| 10 | PF0-OSC_IN | HSE bypass | `CLK_26M` | U6出力をR45=33 Ohm経由で入力。TCXO/PLLの正常clock源 |
+| 11 | PF1-OSC_OUT | GPIO | `NC_PF1` | HSE bypass時は未使用、回路図上NC |
 | 12 | PF2-NRST | NRST | `NRST` | reset button/SWD。R42 10 kOhm pull-up、C18 100 nF |
 | 13 | PC0 | GPIO | `NC_PC0` | 未使用、回路図上NC |
 | 14 | PC1 | GPIO | `NC_PC1` | 未使用、回路図上NC |
@@ -69,7 +69,7 @@ J1 VBUS -> VBUS_RAW -> (F1 || R36) -> VBUS_PROTECTED -> U3 / board loads
 | 27 | PB0 | USART5_TX (AF8) | `MID_NMEA_TX_RAW` | U8B -> J5 pin 3 |
 | 28 | PB1 | GPIO | `PPS_OE_N` | U7/U8/U12のPPS channel共通enable、100 kOhm pull-up |
 | 29 | PB2 | GPIO | `SPR_TX_OE_N` | Spresense TX buffer enable、100 kOhm pull-up |
-| 30 | PB10 | TIM2_CH3 (AF2) | `RTC_32K` | DS3231 32 kHz output、falling-edge capture |
+| 30 | PB10 | GPIO | `NC_PB10` | 未使用、回路図上NC。TIM2_CH3は解放 |
 | 31 | PB11 | USART3_RX (AF4) | `GNSS_NMEA_RX` | U4B HC14出力、RXINV有効 |
 | 32 | PB12 | GPIO | `JET_TX_OE_N` | Jetson TX buffer enable、100 kOhm pull-up |
 | 33 | PB13 | GPIO | `VLP_TX_OE_N` | VLP TX buffer enable、100 kOhm pull-up |
@@ -99,15 +99,15 @@ J1 VBUS -> VBUS_RAW -> (F1 || R36) -> VBUS_PROTECTED -> U3 / board loads
 | 57 | PB3 | GPIO | `PPS_PATH_STATUS` | PPS出力状態/test |
 | 58 | PB4 | GPIO | `GNSS_NMEA_VALID` | firmware status/test |
 | 59 | PB5 | GPIO | `TP_SPARE5` | spare/test pad |
-| 60 | PB6 | I2C1_SCL (AF6) | `RTC_SCL` | DS3231 SCL、4.7 kOhm pull-up |
-| 61 | PB7 | I2C1_SDA (AF6) | `RTC_SDA` | DS3231 SDA、4.7 kOhm pull-up |
+| 60 | PB6 | GPIO | `NC_PB6` | 未使用、回路図上NC |
+| 61 | PB7 | GPIO | `NC_PB7` | 未使用、回路図上NC |
 | 62 | PB8 | GPIO | `AUX1_TX_OE_N` | 予備UART 1 TX buffer enable、100 kOhm pull-up |
 | 63 | PB9 | GPIO | `AUX2_TX_OE_N` | 予備UART 2 TX buffer enable、100 kOhm pull-up |
 | 64 | PC10 | GPIO | `NC_PC10` | 未使用、回路図上NC |
 
 pin数の検算: I/O 60本（PA0～PA15、PB0～PB15、PC0～PC15、PD0～PD6、PD8、PD9、PF0～PF2）+ 電源4本 = 64。ST CubeMX pin databaseの`IONb=60`と一致する。
 
-`VDD`、`VREF+`、`VBAT`はすべて3.3 V系へ接続し、各pin直近へ100 nFを置く。
+`VDD`と`VREF+`は3.3 V系、`VBAT`はCR2032由来の`VBAT_RTC`へ接続し、各電源pin直近へ100 nFを置く。
 
 PA9/PA11とPA10/PA12のremapについて、ST CubeMX pin databaseの記述は次のとおりである。**default状態を使用し、remapは有効化しない。**
 
@@ -123,7 +123,7 @@ PA9/PA11とPA10/PA12のremapについて、ST CubeMX pin databaseの記述は次
 ### 耐圧とdomainの注意
 
 - **PA4とPA5は`TT`（3.6 V tolerant）であり、他の使用pinの`FT`（5 V tolerant）とは異なる。** PA5はU4A（3.3 V）出力駆動、PA4は出力専用のため現構成は適合するが、**この2 pinへ5 V信号を接続してはならない。** VLP-32C系（High上限5.0 V）をMCUへ直結する変更を行う場合は`FT` pinを選ぶ。
-- **PC13の制約（DS13560 Table 12 note 1/2）:** PC13～PC15はRTC power switch経由（3 mA）で供給され、出力モードは2 MHz以下・負荷30 pF以下・sink専用に制限される。`RTC_INT_N`は**入力**なので適合する。**PC13を出力に転用しない。** またPC13の機能はRTCレジスタに依存し、RTCレジスタはsystem resetでリセットされないため、firmwareは内蔵RTCのTAMP/RTC_OUT機能がPC13へ割り付かないことを保証する。
+- **PC13～PC15の制約（DS13560 Table 12 note 1/2）:** RTC power switch経由のdomainである。PC14/PC15はLSE専用、PC13は未使用とし、firmwareはTAMP/RTC_OUTをPC13へ割り付けない。
 
 ### VDDIO2 domainのI/O
 
@@ -141,7 +141,7 @@ DS13560 Table 11の`_s`は「I/O, supplied from VDDIO2 only」を意味する。
 | `AUX2_TX_RAW` / `AUX2_RX` | PC6 / PC7 | `FT_s` |
 | `TP_SPARE6`～`TP_SPARE9` | PD0～PD3 | `FT_cs` / `FT_ds` |
 
-- **時刻機能の中核はすべてVDD domainである。** `PPS_GENERATED`（PC5）、`GNSS_PPS_MON`（PA5）、`RTC_32K`（PB10）、`RTC_INT_N`（PC13）、I2C（PB6/PB7）、Jetson UART（PA2/PA3）、VLP/Mid/Spresense TX（PA0/PB0/PA4）、`PPS_OE_N`（PB1）はいずれも`_s`ではない。
+- **powered時刻機能の中核はVDD domainである。** `CLK_26M`（PF0）、`PPS_GENERATED`（PC5）、`GNSS_PPS_MON`（PA5）、Jetson UART（PA2/PA3）、VLP/Mid/Spresense TX（PA0/PB0/PA4）、`PPS_OE_N`（PB1）はいずれも`_s`ではない。LSE/内蔵RTC/VBATはbackup domainで暦を保持する。
 - `VLP_TX_OE_N`/`MID_TX_OE_N`が万一isolationされても、外付け100 kOhm pull-upがbufferをHigh-Zへ保つため安全側に失敗する。
 - **診断:** 「Jetson UART・PPS・RTCは動作するが、USBが列挙されず、J7/J8が無反応で、VLPとMid-360のNMEAだけ出ない」場合は`PVM_VDDIO2`を最初に確認する。
 
@@ -151,18 +151,19 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
 
 1. pin 8がVDD、pin 9がVSSであること。pin 12がPF2-NRSTであること。
 2. pin 40/41がPD8/PD9であり、電源netへ接続されていないこと。
-3. pin 3がPC13（`RTC_INT_N`）、pin 26がPC5（`PPS_GENERATED`）であること。
+3. pin 3がPC13（`NC_PC13`）、pin 4/5がPC14/PC15（LSE）、pin 10がPF0（`CLK_26M`）、pin 26がPC5（`PPS_GENERATED`）であること。
 4. `VDDIO2`という名前のpinが存在しないこと。
 
 ## MCU clock構成
 
 | 項目 | 構成 | 備考 |
 |---|---|---|
-| SYSCLK / timer clock源 | HSI16 + PLL、64 MHz | 基板にHSEもLSEも実装しない（OI-004で水晶footprintの採否を判断） |
-| timer clockの周波数基準 | **DS3231（TCXO）** | HSI16単独では要求R-013（5分1 ms、平均3.33 ppm）を満たせない。DS3231の32 kHzまたは1 Hzでtimer周波数を常時推定する |
+| SYSCLK / timer clock源 | 26 MHz TCXO + HSE bypass + PLL、62.4 MHz | PLLM=5、PLLN=24、PLLR=2。PF0入力、PF1 NC |
+| timer clockの周波数基準 | **Q2C26000V2D4B2、±0.5 ppm** | 2.8 V TCXOから3.3 V Schmitt buffer経由でTIM2を直接駆動 |
 | UTCの絶対基準 | GNSS PPS + 検証済みNMEA | GNSS有効中はDPLLで位相・周波数を規律する |
 | USB clock | HSI48 + CRS | **CRSはUSB clockのみを規律し、timer clockには影響しない。水晶の要否はUSBとは独立した問題である。** CRSの同期源であるSOFは列挙後にしか来ないため、初回列挙はHSI48の工場trim精度で通す必要がある |
-| UART baud生成 | HSI16由来 | HSI16の実周波数はDS3231規律により既知になるため、firmwareでBRRを補正する（DR-025） |
+| UART baud生成 | TCXO/PLL由来 | ±0.5 ppm級。追加BRR補正は不要 |
+| calendar / power-off保持 | STM32内蔵RTC + X1 LSE + CR2032 | LSEは±20 ppm級。powered holdoverのPPS基準には使わない |
 
 ## PPS/holdoverのtimer構成
 
@@ -172,14 +173,14 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
 |---|---|---|
 | CH1 (AF2) | PA5 / pin 22 | GNSS PPS input capture（HC14反転のためfalling edge） |
 | CH2 (AF2) | PC5 / pin 26 | 生成PPS output compare / PWM |
-| CH3 (AF2) | PB10 / pin 30 | RTC 32 kHz input capture（open-drainのためfalling edge） |
+| CH3 | 使用しない | PB10は未使用GPIO |
 | CH4 | 使用しない | PA3/PB11はUSART2_RX/USART3_RXが使用する |
 
-- `ARR = 63999999`（ARPE有効）、`CCR2 = 6400000`で周期1秒・High幅100 msとなる。tickは15.625 ns、周期補正1 LSBは0.0156 ppmである。
-- ARRを1秒に設定するとcounterが「秒内位相」そのものになり、CH1/CH3のcapture値がそのまま位相誤差になる。異なるtimer間のoffset校正は不要である。
+- `ARR = 62399999`（ARPE有効）、`CCR2 = 6240000`で周期1秒・High幅100 msとなる。tickは約16.026 ns、周期補正1 LSBは約0.0160 ppmである。
+- ARRを1秒に設定するとcounterが「秒内位相」そのものになり、CH1のcapture値がそのまま位相誤差になる。
 - **PWM mode 1・上カウント・active highでは、出力は`CNT < CCR2`の間Highとなる。したがってPPSの立上りedgeはcounter reset（update event）で決まり、`CCR2`が動かすのは立下りedge＝High幅だけである。**
   - 周波数補正も位相補正も**ARR**で行う。位相はQ-017の±100 us/s以内でARRを増減し、秒境界を歩かせて戻す。
-  - `CCR2 = 6400000`はHigh幅100 ms（Q-011）を決める固定値であり、ARRを変えても更新しない。
+  - `CCR2 = 6240000`はHigh幅100 ms（Q-011）を決める固定値であり、ARRを変えても更新しない。
   - `CCR2`を位相補正に使わない。使ってもPPSの基準edgeは動かない。
 - TIM2は他用途へ割り当てない。PA6/TIM3_CH1は監視用test padとして残す。
 - `PPS_GENERATED`をPC5へ移したことによるreset時の懸念はない。reset中の出力状態は`PPS_OE_N`（PB1、100 kOhm pull-up）が74LVC125AをHigh-Zに保つことで決まり、PC5のreset時状態には依存しない。
@@ -200,7 +201,7 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
 
 ## 出力buffer channel割当
 
-3.3 V出力はU7/U8/U12 `74LVC125A`を使用する。U5/U6/U9/U13は使用しない。
+3.3 V出力はU7/U8/U12 `74LVC125A`を使用する。U9/U13は使用しない。U5は2.8 V clock LDO、U6は74LVC1G17 clock bufferへ再割当する。
 
 | IC channel | Input | Output | `/OE` net | Connector |
 |---|---|---|---|---|
@@ -224,7 +225,7 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
 
 - VLP-32C公式条件はPPS/NMEAともHigh >3.0 Vかつ<5.0 V、Low <1.2 V、High時2 mA供給である。
 - U7C/U7Dは`+3V3`駆動のためHigh上限5.0 V未満とLow条件は満たす。Nexperia 74LVC125AはVCC=3.0 V、IOH=-18 mAでVOH min 2.4 Vを規定するが、3.3 V・2 mAに対するVOH minは表で直接規定していない。このためHigh >3.0 V @ 2 mAは文書上のworst-case保証ではなく試作実測項目とする。
-- J4 pin 2/3を各1.5 kOhmでGNDへ負荷し、33 Ohm直列抵抗後のHighが3.0 Vを超え、Lowが1.2 V未満であることを全試作基板で確認する。VLP実機でもPPS/NMEA lockを確認する。
+- J4 pin 2/3を各1.5 kOhmでGNDへ負荷し、R15/R16=10 Ohm後のHighが3.0 Vを超え、Lowが1.2 V未満であることを全試作基板で確認する。規定されていない動作点の補間値は保証根拠に使わず、VLP実機でもPPS/NMEA lockを確認する。
 - 不合格の場合は3.3 V出力を無理に使用せず、次版で専用level driverを再設計する。
 
 ## PPSロジック接続
@@ -271,7 +272,7 @@ J8 BOARD_RX_AUX2_TX -> U4E 74HC14 -> MCU LPUART2_RX (RXINV=1)
 U4F 74HC14 input -> GND; output -> NC
 ```
 
-6系統のTXはすべて別のUART/LPUART peripheralと別のbuffer channelを使う。各bufferの`OE_N`も個別GPIOで制御し、reset中は100 kOhm pull-upでHigh-Zとする。すべての外部出力に33 Ohm初期値の直列抵抗を置く。HC14外部入力は4.7 kOhm初期値の直列抵抗を経由させる。VLPのUSART TX pinはreset中の外部buffer出力がHigh-Zになるよう`OE_N`で制御する。
+6系統のTXはすべて別のUART/LPUART peripheralと別のbuffer channelを使う。各bufferの`OE_N`も個別GPIOで制御し、reset中は100 kOhm pull-upでHigh-Zとする。外部出力の直列抵抗は通常33 Ohm、VLP PPS/NMEAのR15/R16だけ10 Ohmとする。HC14外部入力は4.7 kOhm初期値の直列抵抗を経由させる。VLPのUSART TX pinはreset中の外部buffer出力がHigh-Zになるよう`OE_N`で制御する。
 
 ## 試作機の電源順序制約
 
@@ -284,27 +285,29 @@ U4 `74HC14D,653`はIoff非対応であり、4.7 kOhmは入力clamp電流を制�
 
 この条件を守れない用途、hot-plug、量産版では、U4のIoff対応品への変更および接続先power sense/isolationを再検討する。
 
-## DS3231 U2 pin割当
+## TCXO、HSE bypass、LSE接続
 
-| U2 pin | 名称 | 接続・処理 |
-|---:|---|---|
-| 1 | 32kHz | `RTC_32K`、R26 10 kOhmで`+3V3`へpull-up、MCU PB10 / pin 30 |
-| 2 | VCC | `+3V3`、C2 100 nFをpin直近へ配置 |
-| 3 | INT/SQW | `RTC_INT_N`、R25 10 kOhmで`+3V3`へpull-up、MCU PC13 / pin 3 |
-| 4 | RST | 未使用、open。内部50 kOhm nominal pull-upを使用し、外付けpull-up禁止 |
-| 5～12 | N.C. | メーカー指定に従いすべてGNDへ接続 |
-| 13 | GND | GND |
-| 14 | VBAT | BT1 CR2032正極。一次電池backup用途のため外付けcapacitorなし |
-| 15 | SDA | `RTC_SDA`、R4 4.7 kOhmで`+3V3`へpull-up、MCU PB7 / pin 61 |
-| 16 | SCL | `RTC_SCL`、R3 4.7 kOhmで`+3V3`へpull-up、MCU PB6 / pin 60 |
+```text
++3V3 -> U5 XC6206P282MR -> +2V8_CLK
++2V8_CLK -> U2 Q2C26000V2D4B2 VDD
+U2 CMOS OUT -> U6 74LVC1G17GW input
++3V3 -> U6 VCC
+U6 OUT -> R45 33 Ohm -> CLK_26M -> MCU PF0/OSC_IN
+MCU PF1/OSC_OUT -> NC
+U2 ENABLE/ST -> R46 10 kOhm -> +2V8_CLK
 
-### RTC出力のcapture edge極性（DR-016）
+MCU PC14/OSC32_IN -- X1 SC-32S 32.768 kHz -- MCU PC15/OSC32_OUT
+PC14 -- C22 10 pF C0G ±5% -- GND
+PC15 -- C23 10 pF C0G ±5% -- GND
+BT1 CR2032+ -> VBAT_RTC -> MCU VBAT
+BT1 CR2032- -> GND
+```
 
-`32kHz`と`INT/SQW`はいずれもopen-drain出力である。立下りはDS3231が能動的に駆動するため高速だが、立上りは10 kOhm pull-upと負荷容量（概算10～15 pF）によるRC波形となり、時定数100～150 ns、10～90 %立上り220～330 nsとなる。しきい値通過時刻がVIHのばらつきと温度で動くため、**`RTC_32K`と`RTC_INT_N`はいずれも立下りedgeで検出する。** これはholdoverの周波数基準となる経路なので、edge極性をfirmware要求として固定する。
-
-余裕を増やす場合はR26を2.2 kOhmへ下げられる（DS3231のIOL 3 mA / VOL 0.4 Vに対し1.5 mA）。立下りcaptureを採用すれば通常は不要である。
-
-主電源OFF中はR25/R26の接続先railが0 Vになるため、pull-up経由のCR2032消耗は発生しない。
+- U5入出力へ各1 uF、U2/U6の電源pin直近へ各100 nFを置く。`+2V8_CLK`はU2専用とする。
+- X1のCL=7 pFに対し基板寄生を約2 pFと仮定し、C22/C23は10 pFを初期値とする。試作で8.2～12 pFの範囲を調整し、LSE drive capabilityと起動余裕を確認する。
+- U2→U6→PF0はGND plane上を短く配線し、R45はPF0直近へ置く。clock配線のtest padは小型・stub最小とする。
+- U2の個別pin配置、enable/standby極性、起動時間、±0.5 ppmの温度範囲はメーカー個別datasheetとEasyEDA libraryを発注前に照合する。
+- HSE Clock Security Systemを有効化する。HSE/PLL faultでHSIへ切り替わった場合、時刻出力は継続せず全`OE_N`をHighにして`FAULT_CLOCK`へ遷移する。
 
 ## RESET / BOOT / DFU
 
@@ -340,8 +343,11 @@ U4 `74HC14D,653`はIoff非対応であり、4.7 kOhmは入力clamp電流を制�
 | VREFBUF | VREF+を外部から3.3 Vで駆動するため有効化しない |
 | `PWR_CR2`の`PVM_VDDIO2[2:0]` | **`110`（Monitoring bypassed; IOs enabled）を設定する。** reset値000は「IOs in isolation mode」であり、USB・SWD・AUX1/AUX2 UART・VLP/Mid TXのOE_NがVDDIO2 domainに属する。上記「VDDIO2 domainのI/O」参照 |
 | `SYSCFG_CFGR1`の`UCPD1_STROBE` / `UCPD2_STROBE` | **起動時にstrobeしてdead-battery pull-downを無効化する。** DS13560 Table 12 note 4により、reset時PA8/PB15/PD0/PD2にpull-downが present し得る（PA9/PA10/PD1/PD3の電圧に依存）。PA8/PB15は未使用、PD0～PD3はtest padのため現状は無害だが、test padを使う場合に必要 |
-| 内蔵RTC | PC13の機能はRTCレジスタに依存し、RTCレジスタはsystem resetでリセットされない。TAMP/RTC_OUTがPC13へ割り付かないことを保証する |
-| timer edge極性 | GNSS PPS（HC14反転）、`RTC_32K`、`RTC_INT_N`はいずれもfalling edgeで検出する |
-| UART baud補正 | DS3231規律で判明したHSI16実周波数からBRRを補正する |
-| TIM2構成 | `ARR = 63999999`、ARPE有効、`CCR2 = 6400000`（High幅100 ms固定）。**周波数補正と位相補正はいずれもARRで行う。PWM mode 1では`TIMx_CNT < TIMx_CCRx`の間がHighであり立上りedgeがcounter resetで決まるため、`CCR2`では位相が動かない**（RM0444 PWM edge-aligned mode、Figure 136） |
-| DS3231 `EN32kHz` | shutdown前にクリアする処理は不要。`IBATT` typ 0.84 uA / max 3.0 uAは`EN32kHz = 1`条件での規定値であり、CR2032 220 mAhに対しmax値で概算8年 |
+| clock tree | HSE bypass、HSE=26 MHz、PLLM=5、PLLN=24、PLLR=2、SYSCLK/TIM2=62.4 MHzを設定。HSE CSSを有効化する |
+| 内蔵RTC | LSEをclock源とし、backup registerにsignature、calendar CRC、TCXO補正値を保存する。PC13へTAMP/RTC_OUTを割り付けない |
+| timer edge極性 | GNSS PPSはU4Aで反転するためTIM2_CH1 falling-edge capture |
+| clock規律 | GNSS有効中はCH1 PPSからTCXO実偏差と位相を推定する。holdoverでは最後に検証済みのARR補正値を保持する |
+| UART baud | TCXO/PLL由来。通常はBRRの動的補正不要 |
+| TIM2構成 | `ARR = 62399999`、ARPE有効、`CCR2 = 6240000`（High幅100 ms固定）。**周波数補正と位相補正はいずれもARRで行う。** |
+| RTC有効性 | backup signature/CRC、LSERDY、backup reset、calendar範囲を確認する。無効なら外部へ時刻を出さない |
+| clock fault | HSE/PLL異常時はHSIへ診断退避し、全`OE_N`をHigh、`FAULT_CLOCK`へ遷移する |

@@ -2,35 +2,35 @@
 
 ## 基本方針
 
-- 優先順位はGNSS、Jetson、RTCの順とする。
-- 外部へ出すPPSは常にMCU timerから生成し、入力PPSやRTC SQWを直接切り替えない。
+- 優先順位はGNSS、Jetson、STM32内蔵RTCの順とする。
+- 外部へ出すPPSは常に26 MHz TCXOで駆動されるMCU timerから生成し、入力PPSやRTC出力を直接切り替えない。
 - UTCが一度も確立していない状態では、全出力bufferをHigh-Zにする。
 - GNSS喪失後もPPS/NMEAを継続するが、RMC statusは`V`とし、測位有効性を偽らない。
 - 出力中の時刻補正は原則slewとし、短パルス、二重パルス、パルス欠落、秒の逆行を発生させない。
 
-## RTC設定
+## Clock・内蔵RTC設定
 
-- U2 `INT/SQW`は`INTCN=0`、`RS2:RS1=00`として1 Hz square waveに設定する。
-- `BBSQW=0`とし、本基板主電源OFF中は`INT/SQW`をHigh-Zにする。CR2032はcalendar/TCXO保持だけに使用する。
-- U2 `32kHz`からMCU PB10（TIM2_CH3）への回路接続は残す。32 kHzと1 Hzのどちらを周波数基準に使うかは[`open_issues.md`](./open_issues.md)のOI-002で決定する。
-- **DS3231を周波数基準として常時規律することは選択肢ではなく、要求R-013（GNSS消失後5分で1 ms以下）の成立条件である。** 基板にHSE/LSE水晶がなくMCUはHSI16で動作するため、規律を止めた構成では要求を満たせない。根拠は[`../../plan/design.md`](../../plan/design.md) §6.6を正とする。
-- `32kHz`と`INT/SQW`はいずれもopen-drain出力で、立上りは10 kOhm pull-upによるRC波形になる。**両方とも立下りedgeで検出する。**
-- 起動時にOscillator Stop Flag（OSF）を確認する。OSF=1、RTC読出し異常、日時範囲外、または電池交換後未設定ならRTC時刻は無効とする。
-- RTC-only起動では1 Hz `INT/SQW` edgeをローカル秒境界としてMCU timer位相を初期化し、edge直後にcalendarを読み出してUTC秒を対応付ける。出力は2回連続して単調な秒更新を確認した後にenableする。
-- GNSS有効中はまず`INT/SQW` 1 Hz edgeとMCU timerのoffsetを校正し、holdover開始時に最後の有効な補正値を引き継ぐ。
-- holdoverへ引き継ぐのは**MCU timerとDS3231の周波数比**である。GNSS PPS由来のtimer補正値そのものはHSI16に対する補正であり、ダイ温度が動いた時点で無効になるため5分の保持には使えない。この区別を実装で崩さない。
+- U2 26 MHz TCXOをHSE bypassへ入力し、PLLM=5、PLLN=24、PLLR=2でSYSCLK/TIM2=62.4 MHzとする。HSE CSSを有効化する。
+- X1 32.768 kHz LSEをSTM32内蔵RTCのclock源とし、CR2032からVBAT domainを保持する。LSEはcalendar/backup専用で、powered holdoverのPPS周波数基準には使わない。
+- backup registerに固定signature、version、calendar CRC、最後に検証済みのTCXO補正値と同期時刻を保存する。更新はCRCを最後に書く二段階手順とし、中途半端な書込みを有効扱いしない。
+- 起動時はsignature/version/CRC、LSERDY、backup-domain reset flag、calendar範囲、単調なsubsecond registerを確認する。一つでも異常ならRTC時刻を無効とする。
+- RTC-only起動ではRTC calendarとsubsecond register（SSR）を連続して整合読出しし、1 Hz wakeup eventを補助にTIM2の秒内位相を初期化する。2回連続した単調更新を確認してから出力をenableする。
+- GNSS有効中はPPSからTCXOの実偏差を連続推定し、ARR補正値を更新する。holdover開始時は最後に検証済みの補正値をそのまま引き継ぐ。
+- R-013（GNSS消失後5分で1 ms以下）は主電源ON、TCXO/TIM2継続動作中のholdover要求である。主電源OFF中の時刻精度はLSEの±20 ppm級であり、同じサブms要求を適用しない。
+- HSE/PLL/CSS fault時はHSIへ診断退避するが、時刻品質を保証できないため全出力をHigh-Zにし、`FAULT_CLOCK`へ遷移する。
 
 ## 状態
 
 | State | 進入条件 | PPS/NMEA出力 | 遷移 |
 |---|---|---|---|
-| `INIT_INVALID` | power-on、UTC未確立、RTC無効 | 全channel High-Z | GNSS確立→`GNSS_LOCKED`、有効Jetson SET→`JETSON_SET`、RTC有効→`RTC_HOLDOVER` |
+| `INIT_INVALID` | power-on、UTC未確立、RTC無効 | 全channel High-Z | GNSS確立→`GNSS_LOCKED`、有効Jetson SET→`JETSON_SET`、RTC有効→`TCXO_HOLDOVER` |
 | `GNSS_ACQUIRE` | PPSまたはNMEAの一方だけ有効 | 既存の有効時刻があればholdover出力、なければHigh-Z | PPS+valid NMEAを5回連続→`GNSS_LOCKED`、timeout→前状態 |
-| `GNSS_LOCKED` | PPS周期正常、checksum/UTC/status=`A`のNMEAを5回連続 | 規律済みPPS、RMC=`A`。VLPだけUTC+1秒・checksum再計算 | PPS 2回連続欠落、NMEA timeout/invalid→`RTC_HOLDOVER`、大きな位相差→`FAULT` |
-| `JETSON_SET` | GNSS無効中に認証済みSETを受信 | 下記step/slew規則に従う | 設定完了→`RTC_HOLDOVER`、GNSS確立→`GNSS_LOCKED` |
-| `RTC_HOLDOVER` | GNSS無効、RTC有効、または有効時刻を保持中 | MCU timer PPSを継続、全NMEA RMC=`V`。VLPはUTC+1秒処理を維持 | GNSS 5回連続正常→`RESYNC`、有効Jetson SET→`JETSON_SET`、RTC/MCU時刻異常→`FAULT` |
-| `RESYNC` | holdoverからGNSS復帰 | PPS/NMEA継続。周期補正は±100 us/s以内 | 位相差収束→`GNSS_LOCKED`、GNSS再喪失→`RTC_HOLDOVER` |
+| `GNSS_LOCKED` | PPS周期正常、checksum/UTC/status=`A`のNMEAを5回連続 | 規律済みPPS、RMC=`A`。VLPだけUTC+1秒・checksum再計算 | PPS 2回連続欠落、NMEA timeout/invalid→`TCXO_HOLDOVER`、大きな位相差→`FAULT`、clock異常→`FAULT_CLOCK` |
+| `JETSON_SET` | GNSS無効中に認証済みSETを受信 | 下記step/slew規則に従う | 設定完了→`TCXO_HOLDOVER`、GNSS確立→`GNSS_LOCKED` |
+| `TCXO_HOLDOVER` | GNSS無効、内蔵RTC有効、または有効時刻を保持中 | TCXO/TIM2 PPSを継続、全NMEA RMC=`V`。VLPはUTC+1秒処理を維持 | GNSS 5回連続正常→`RESYNC`、有効Jetson SET→`JETSON_SET`、RTC/MCU時刻異常→`FAULT`、clock異常→`FAULT_CLOCK` |
+| `RESYNC` | holdoverからGNSS復帰 | PPS/NMEA継続。周期補正は±100 us/s以内 | 位相差収束→`GNSS_LOCKED`、GNSS再喪失→`TCXO_HOLDOVER` |
 | `FAULT` | UTC矛盾、timer異常、補正不能な位相差 | 全出力High-Z、状態通知 | 明示的な再初期化または有効時刻SET |
+| `FAULT_CLOCK` | HSE CSS、PLL unlock、TCXO/clock異常 | 全出力High-Z。HSIは診断通信だけに使用 | clock再初期化成功後にUTC/RTCを再検証。自動でPPSを再enableしない |
 
 ## Jetson SETの適用
 
@@ -48,7 +48,8 @@
 
 ## 文書段階の試験項目
 
-- RTC正常/OSF=1/電池なしでの起動状態と出力High-Z。
+- 有効backup、signature/CRC異常、LSERDY失敗、電池なしでの起動状態と出力High-Z。
+- HSE停止、PLL unlock、TCXO enable異常で`FAULT_CLOCK`へ入り、PPS/NMEAがHigh-Zになること。
 - GNSS PPSのみ、NMEAのみ、checksum異常、RMC=`V`、両方喪失時の遷移。
 - GNSS喪失5分後のPPS誤差1 ms以下。
 - GNSS復帰時に短パルス、二重パルス、欠落、UTC逆行がないこと。
