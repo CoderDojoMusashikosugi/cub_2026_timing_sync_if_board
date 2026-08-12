@@ -1,17 +1,17 @@
 # GPSタイミング同期インターフェース基板 設計書
 
 - 文書状態: 回路設計ベースライン確定 / 機構条件と実機検証結果待ち
-- 更新日: 2026-08-12
-- 文書版: 0.26
+- 更新日: 2026-08-13
+- 文書版: 0.27
 - 製造先: JLCPCB PCBA
 - EDA: EasyEDA Pro
 - 文書種別: 最終設計の正本。検討経緯は[`considerations.md`](./considerations.md)、現在の未解決事項は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)に分離する
-- 最新レビュー: [`../hardware/reviews/clock_cost_optimization_review.md`](../hardware/reviews/clock_cost_optimization_review.md)（版0.26はDR-034の再レビュー是正を反映）
+- 最新部品選定: [`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)（DR-050）
 - メーカー一次資料: [`../hardware/datasheets/`](../hardware/datasheets/)
 
 ## 1. 目的
 
-外部UM982モジュールを基準時刻源とし、PPSおよびNMEA時刻情報をJetson Orin Nano、VLP-32C、Mid-360、Spresense向けレベルシフト基板へ配信する。GNSS信号消失時はJetson、さらにJetsonが使用できない場合は26 MHz TCXOでholdoverし、CR2032で保持したSTM32内蔵RTCの暦を使ってPPS/NMEAの出力を継続する。
+外部UM982モジュールを基準時刻源とし、PPSおよびNMEA時刻情報をJetson Orin Nano、VLP-32C、Mid-360、Spresense向けレベルシフト基板へ配信する。GNSS信号消失時はJetson、さらにJetsonが使用できない場合はYXC `OW7EL89CENUYO3YLC-24M` / C22434890の24 MHz TCXOをU14 comparatorでCMOS化したclockでholdoverし、CR2032で保持したSTM32内蔵RTCの暦を使ってPPS/NMEAの出力を継続する。
 
 ## 2. 確定要求
 
@@ -73,7 +73,7 @@
 - 公式Developer Kit (P3768 carrier) の40-pin expansion headerへ接続する。
 - UART1はpin 8がJetson TX、本基板から見たRX入力、pin 10がJetson RX、本基板から見たTX出力。全信号は3.3 V系。
 - PPS入力はpin 7 (GPIO09) を使用する。GPIO/PPSドライバ設定はJetson側ソフトウェア設計で確認する。
-- UARTはGNSS/NMEA受信用だけでなく、Jetsonから時刻設定・状態確認を行う双方向制御ポートとして使用する。
+- UARTは115200 baud、8N1とし、Jetsonから時刻設定・状態確認を行う双方向制御ポートとして使用する。CRC付きframe仕様は[`../hardware/overall/jetson_time_protocol.md`](../hardware/overall/jetson_time_protocol.md)を正とする。
 
 資料: [Jetson Orin Nano Developer Kit Carrier Board Specification](https://developer.nvidia.com/downloads/assets/embedded/secure/jetson/orin_nano/docs/jetson_orin_nano_devkit_carrier_board_specification_sp.pdf)
 
@@ -90,7 +90,8 @@
 flowchart LR
     UM[UM982] -->|reference PPS| MCU[MCU timer + DPLL/holdover]
     USB[USB Type-C power + USB 2.0] --> MCU
-    TCXO[26 MHz TCXO + level buffer] -->|HSE bypass / timer clock| MCU
+    TCXO[YXC C22434890 24 MHz clipped sine] --> CMP[TI C544337 CMOS comparator]
+    CMP -->|R45 / HSE bypass / timer clock| MCU
     LSE[LSE crystal + CR2032] -->|internal RTC / calendar| MCU
     UM -->|NMEA UART| MCU
     MCU -->|continuous generated PPS| FAN[PPS fanout / output buffers]
@@ -114,8 +115,8 @@ flowchart LR
 - 出力PPSはGNSS正常時を含め、常にMCUのハードウェアタイマー出力比較機能で生成する。GNSS PPSは出力源として直接切り替えず、MCUタイマーを規律する基準として使用する。
 - 生成PPSとGNSS PPSキャプチャは32-bitのTIM2へ集約する。生成PPSはPC5/TIM2_CH2、GNSS PPSキャプチャはPA5/TIM2_CH1を使用し、CH3は未使用とする。16-bitのTIM3は1 Hz生成に必要な分解能が不足するため使用しない。詳細は[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)の「PPS/holdoverのtimer構成」を正とする。
 - MCUはGNSS PPSをタイマー入力キャプチャで監視し、位相誤差と周波数誤差を推定する。GNSS PPSはU4A 74HC14で反転するため立下りedgeでキャプチャする。
-- GNSS異常時はPPS生成を継続し、GNSS有効中に学習した26 MHz TCXOの周波数補正値を保持する。TCXOはTIM2のクロック源そのものなので、外部RTCとの周波数比計測は不要である。
-- 26 MHz TCXOを2.8 Vで動作させ、3.3 V駆動のSchmitt bufferを介してPF0/OSC_INへ入力する。STM32はHSE bypass modeで使用し、PF1/OSC_OUTは未接続とする。PF0入力は26 MHz、duty 45～55 %を満たすことを試作合否条件とする。
+- GNSS異常時はPPS生成を継続し、GNSS有効中に学習した24 MHz TCXOの周波数補正値を保持する。TCXOはTIM2のクロック源そのものなので、外部RTCとの周波数比計測は不要である。
+- U2はYXC `OW7EL89CENUYO3YLC-24M` / C22434890を採用する。3.3 V、clipped sine 0.8 Vp-p min、10 kOhm // 10 pF、-30～85 ℃で温度安定度±1.5 ppm、消費電流2.0 mA maxである。C19でAC結合して1.10 Vへbiasし、U14 TI `LMV7219M7X/NOPB` / C544337で3.3 V CMOS化する。U14 OUTをR45経由でPF0/OSC_INへ入力し、STM32はHSE bypass mode、PF1/OSC_OUTは未接続とする。PF0入力は24 MHz、duty 45～55 %を満たすことを試作合否条件とする。
 - GNSS復帰時は正常なPPS/NMEAを5回以上連続受信してから再同期を開始する。出力PPS周期の補正量を1秒当たり±100 usに制限し、PPS間隔を0.999900～1.000100秒の範囲で緩やかにGNSS位相へ戻す。
 - 再同期中も短パルス、二重パルス、パルス欠落、秒の重複・飛越を発生させない。位相差が通常のslewで安全に回復できないほど大きい場合は同期異常として通知する。
 - 各出力には個別の直列抵抗とテストポイントを設ける。初回プロトタイプではGH信号ESD footprint自体を設けず、同一ロボット内・電源OFF中のみ接続という運用条件を適用する。
@@ -126,7 +127,7 @@ flowchart LR
 - したがって定常時に管理する値は「入力から出力までの因果的な伝搬遅延」ではなく、「GNSS PPSと生成PPSの位相差」とする。
 - GNSS入力はBasicの74HC14Dを通るため信号が反転し、伝搬遅延はLVC品より増えるが、この用途では数十ns級でPPSの1 us目標に対して十分小さい。固定offsetは出力74LVC125Aと合わせて実測・校正する。
 - 入力側の固定遅延の内訳は、R27 4.7 kOhmとU4A入力容量・配線容量によるRC（概算55～82 ns、U4しきい値ばらつきによる基板間差約27 ns）、U4Aの伝搬遅延、capture同期遅延である。0～40 °Cでのドリフトは10 ns級であり、1 us目標に対して支配的ではないため部品定数は変更しない。
-- STM32G0B1で32-bitのTIM2を62.4 MHzで動作させた場合の1 tickは約16.026 ns。ARR=62,399,999で1秒周期とし、周期補正の1 LSBは約0.0160 ppmとなる。入力capture同期遅延を含む固定offsetは、実装後に測定してDPLLの位相補正値へ含める。
+- STM32G0B1で32-bitのTIM2を48 MHzで動作させた場合の1 tickは約20.833 ns。ARR=47,999,999で1秒周期とし、周期補正の1 LSBは約0.0208 ppmとなる。入力capture同期遅延を含む固定offsetは、実装後に測定してDPLLの位相補正値へ含める。
 - timer output compareでedgeを生成するため、通常のfirmware割込み応答時間はPPS edgeのジッタへ直接加算されない。
 - 設計目標は、GNSS追従安定後の基板コネクタ出力edgeをGNSS入力edgeに対して絶対値1 us以内とする。保証可否は基準クロック構成と実機測定後に判定する。
 - 電源投入後は正常なGNSS PPS/NMEAを5回連続確認するため、GNSS同期済みとしてPPSを有効化するまで約5～6秒を見込む。GNSS復帰時は既存PPSを停止せず、±100 us/秒以内で位相を戻す。
@@ -143,13 +144,13 @@ flowchart LR
 
 ### 4.3 電源
 
-- 入力VBUSはUSB規定内の4.75～5.25 Vとする。MCUと全出力bufferは3.3 V、TCXOは専用2.8 V LDO、clock bufferは3.3 Vとする。VLP専用電源は設けない。
+- 入力VBUSはUSB規定内の4.75～5.25 Vとする。MCU、U2 TCXO、U14 comparator、全出力bufferは3.3 Vとし、TCXO専用LDOは設けない。VLP専用電源も設けない。
 - USB Type-CのVBUS 5 Vだけを主電源とする。Jetson用GHおよび他の信号コネクタからは給電しない。
 - USB Type-CはUSB 2.0 device/UFPとして構成し、CC1/CC2へ各5.1 kOhmのRdを接続する。USB PDは実装しない。
 - VBUSの500 mA級リセッタブルヒューズF1とLittelfuse 5 V TVSはfootprintを設けるが、低予算初回はDNPとする。F1と並列のR36 `0603WAF0000T5E` / C21189を実装してVBUSを導通させる。保護variantではR36をDNP、F1を実装し、両方の同時実装は禁止する。TVSは実装しても短時間transient対策であり、XC6206の6 V absolute max以下を保証するOVPではない。
-- 外部機器へ給電しないため、基板消費電流をUSB default current内に収める。
-- VBUS経路の設計上限は0.5 Aとする。R36の1 A jumper定格およびF1のIhold 0.50 Aに対し、通常消費電流はこれを十分下回ることを電源budgetで確認する。
-- STM32のVBATへCR2032を接続し、LSEと内蔵RTCにより主電源断中も暦とbackup registerを保持する。
+- 外部機器へ給電しない。通常構成の基板消費電流はUSB 2.0未configured時の100 mA未満を合否基準とする。
+- VBUS配線・R36・F1の物理設計上限は0.5 Aとするが、これは通常消費の許容値ではない。電流内訳、U3損失、VBAT寿命は[`../hardware/overall/power_budget.md`](../hardware/overall/power_budget.md)を正とする。
+- CR2032からR47=100 Ohmを介してSTM32のVBATへ接続し、LSEと内蔵RTCにより主電源断中も暦とbackup registerを保持する。充電経路は設けない。
 - 外部UM982、LiDAR、Jetson、Spresenseへは原則として給電せず、信号と共通GNDだけを接続する。
 - 初回試作では追加のpower sense/isolationを実装しない。J2～J8は全機器OFF中に接続・切断し、本基板を外部入力源より先または同時にONする。接続先OFF前に全出力`OE_N`をHighとしてHigh-Zへ移行する。詳細は[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)の「試作機の電源順序制約」を正とする。
 
@@ -222,21 +223,21 @@ flowchart LR
 - PPS入力キャプチャとPPS生成を1個の32-bitタイマー（TIM2）の2チャネルで実現する。
 - UTC日時処理、NMEA parser/checksum、ウォッチドッグ、brown-out reset。
 - 製造時書込み用SWD等。
-- 26 MHz HSE bypass、内蔵RTC/LSE、backup register、smooth calibrationを使用する。
+- 24 MHz HSE bypass、内蔵RTC/LSE、backup register、smooth calibrationを使用する。
 
 ### 6.1.1 クロック構成
 
-基板には26 MHz TCXOと32.768 kHz LSE水晶を実装する。TCXOはHSE bypass入力からPLL/TIM2を直接駆動し、LSEはCR2032でバックアップされるSTM32内蔵RTC専用とする。
+基板にはU2 YXC `OW7EL89CENUYO3YLC-24M` / C22434890、U14 TI `LMV7219M7X/NOPB` / C544337、32.768 kHz LSE水晶を実装する。U2のclipped-sine出力はC19と1.10 V bias回路を経てU14で3.3 V CMOS化し、R45経由でHSE bypass/PLL/TIM2を駆動する。LSEはCR2032でバックアップされるSTM32内蔵RTC専用とする。旧C48677994/C51822852/C51966238は採用解除した。
 
-clock初期化はVoltage Range 1へ設定して`VOSF=0`を確認し、Flash latencyを2 wait stateへ上げた後にPLLM=5、PLLN=24、PLLR=2のPLLへSYSCLKを切り替える。LSEは`LSEDRV=10`（medium-high）とし、VBAT保持と競合するSTM32G0B1 errata ES0548 §2.2.1を避けるため`LSECSSON=0`とする。
+clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定して`VOSF=0`を確認し、Flash latencyを2 wait stateへ上げた後にPLLM=2、PLLN=16、PLLR=4のPLLへSYSCLKを切り替える。PLLQ=4をUSBへ供給する。LSEは`LSEDRV=10`（medium-high）とし、VBAT保持と競合するSTM32G0B1 errata ES0548 §2.2.1を避けるため`LSECSSON=0`とする。
 
 | 項目 | 構成 | 備考 |
 |---|---|---|
-| SYSCLK / timer clock源 | 26 MHz TCXO + HSE bypass + PLL、62.4 MHz | PLLM=5、PLLN=24、PLLR=2。PF0 duty 45～55 %、Voltage Range 1、Flash 2 wait state。TIM2も62.4 MHz |
-| timer clockの周波数基準 | **Q2C26000V2D4B2 TCXO、±0.5 ppm** | GNSS有効中に実測補正値を学習し、holdoverで保持する。R-013の成立条件 |
+| SYSCLK / timer clock源 | 24 MHz TCXO + comparator + HSE bypass + PLL、48 MHz | PLLM=2、PLLN=16、PLLR=4。PF0 duty 45～55 %、Voltage Range 1、Flash 2 wait state。TIM2も48 MHz |
+| timer clockの周波数基準 | **YXC OW7EL89CENUYO3YLC-24M / C22434890、温度安定度±1.5 ppm** | GNSS有効中に実測補正値を学習し、holdoverで保持する。U14の固定delayは周波数へ累積しない。R-013は試作実測で判定する |
 | UTCの絶対基準 | GNSS PPS + 検証済みNMEA | GNSS有効中はDPLLで位相・周波数を規律する |
-| USB clock | HSI48 + CRS | **CRSはUSB clockのみを規律し、timer clockには影響しない。したがって水晶の要否はUSBとは独立した問題である。** CRSはSOFへ同期するがSOFは列挙後にしか来ないため、初回列挙はHSI48の工場trim精度だけで通す必要がある。列挙失敗はbring-upの確認項目とする |
-| UART baud生成 | TCXO/PLL由来 | ±0.5 ppm級であり、外部比率計測なしで十分なbaud精度を得る |
+| USB clock | PLLQ=48 MHz | PLLM=2、PLLN=16、PLLQ=4。HSI48+CRSは使用しない |
+| UART baud生成 | TCXO/PLL由来 | 温度安定度±1.5 ppm級であり、外部比率計測なしで十分なbaud精度を得る |
 | RTC/calendar | STM32内蔵RTC + 32.768 kHz LSE + CR2032 | PC14/PC15に7 pF品を接続。`LSEDRV=10`、LSE CSS無効。電源断中はcalendar/backup registerを保持する |
 | clock fault | HSE CSS + firmware監視 | HSE/PLL fault時はHSIへ退避するが、PPS/NMEAはHigh-Zとして`FAULT_CLOCK`へ遷移する |
 
@@ -246,17 +247,16 @@ clock初期化はVoltage Range 1へ設定して`VOSF=0`を確認し、Flash late
 
 | 機能 | 採用品 | LCSC | 選定理由 | 状態 |
 |---|---|---|---|---|
-| MCU | STM32G0B1RBT6 | C5143679 | native USB FS、6 USART + 2 LPUART、I2C、32-bit TIM2、LQFP-64 | 採用。2026-08-10確認時$2.9679、予約可能2370。**N接尾辞品`STM32G0B1RBT6N`はpin 40/41が非互換なので差し替え禁止** |
-| TCXO | Q2C26000V2D4B2 | C48677994 | 26 MHz、2.8 V、CMOS、±0.5 ppm、SMD2520-4 | 採用。HSE bypass用。2026-08-12 API価格$0.5016、予約可能848 |
-| TCXO LDO | XC6206P282MR | C347374 | 2.8 V、250 mA、Iq 7 uA、SOT-23 | 採用。clock rail専用。2026-08-12 API価格$0.0196 |
-| clock buffer | 74LVC1G17GW,125 | C426705 | 3.3 V、non-inverting Schmitt、SOT-353 | 採用。2.8 V TCXOを3.3 V HSE入力へlevel restoration。2026-08-12 API価格$0.1123 |
+| MCU | STM32G0B1RBT6 | C5143679 | native USB FS、6 USART + 2 LPUART、32-bit TIM2、LQFP-64 | 採用。2026-08-10確認時$2.9679、予約可能2370。**N接尾辞品`STM32G0B1RBT6N`はpin 40/41が非互換なので差し替え禁止** |
+| TCXO | **YXC OW7EL89CENUYO3YLC-24M** | **C22434890** | 24 MHz、clipped sine 0.8 Vp-p min、±1.5 ppm、-30～85 ℃、2.0 mA max、SMD2016-4P | **採用。** 通常SMT、在庫約6,500、$0.87前後。無断代替禁止 |
+| Clock comparator | **TI LMV7219M7X/NOPB** | **C544337** | 2.7～5 V、push-pull、7 mV hysteresis、20 ns max delay、SC-70-5 | **採用。** API確認時在庫911、予約可能907、$0.8965 |
 | LSE crystal | SC-32S32.768kHz20PPM7pF | C97604 | 32.768 kHz、CL=7 pF、±20 ppm、SMD3215 | 採用。内蔵RTC/calendar専用。2026-08-12 API価格$0.1886 |
 | USB ESD | USBLC6-2SC6 | C7519 | USB 2.0対応2-line ESD保護 | 採用。D+/D-コネクタ直近へ実装 |
 
-- clock core 4部品の部品単価合計は$0.8221で、DS3231SN/C9866の$7.5005に対し$6.6784（89.0%）削減する。受動部品、実装費、CR2032 holderはこの比較に含めない。
-- Q2C26000V2D4B2の個別pin配置、standby/enable極性、起動時間は発注前にメーカー個別datasheetと実装libraryで照合する。U2 outputはU6を介しR45=33 OhmでPF0へ、enableはR46=10 kOhmで+2V8_CLKへpull-upする。
+- U2はpin 1/2=GND、pin 3=OUT、pin 4=`+3V3`。U14はpin 1=OUT、2=GND、3=+IN、4=-IN、5=`+3V3`とする。C19 AC結合、R48=30 kOhm/R49=15 kOhm/C20の1.10 V reference、R50 bias、C21 decouplingを実装し、U14 pin 1をR45=33 Ohm経由でPF0へ接続する。U15/`+2V8_CLK`は配置しない。
+- C22434890は通常SMT、C544337はExtended/SMTである。受動部品とR45を含むclock chainは約$1.8346で、旧C51822852単体$23.0346から約92.0 %削減する。
 - JLCPCBのBasic/Promotional区分は変動するため、発注用BOM作成時に公式parts libraryで再確認する。
-- STM32G0B1RBT6は[ST製品情報](https://www.st.com/en/microcontrollers-microprocessors/stm32g0b1rb.html)および[JLCPCB C5143679](https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RBT6/C5143679)、TCXO familyは[KYX製品情報](https://www.kyxcrystal.com/crystal-oscillators/)、clock bufferは[Nexperia製品情報](https://www.nexperia.com/product/74LVC1G17)を参照。
+- STM32G0B1RBT6は[ST製品情報](https://www.st.com/en/microcontrollers-microprocessors/stm32g0b1rb.html)および[JLCPCB C5143679](https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RBT6/C5143679)、U2/U14は[YXC YSO510TP family資料](https://www.yxc.hk/uploadfiles/2023/07/20230710175706329.pdf)と[TI LMV7219資料](https://www.ti.com/lit/ds/symlink/lmv7219.pdf)を参照。選定詳細は[`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)を正とする。
 
 ### 6.3 MCUピン割当
 
@@ -298,7 +298,7 @@ clock初期化はVoltage Range 1へ設定して`VOSF=0`を確認し、Flash late
 | 3.3 V LDO | XC6206P332MR-G、LCSC C5446 | Basic、200 mA、VIN max 6 V、SOT-23-3。外部給電なし、3.3 V rail設計上限100 mA |
 | USB ESD | USBLC6-2SC6、LCSC C7519 | D+/D-をコネクタ直近で保護 |
 | VBUS保護 | F1 `MF-NSMF050-2` + R36 `0603WAF0000T5E` / C21189 + D1 `SMF5.0A-T13` | 初回はF1/D1 DNP、R36実装。保護variantはF1実装、R36 DNP。5 V規定USB電源のみ使用 |
-| RTC backup | CR2032一次電池 + holder | 充電回路は設けず、STM32 VBATへ接続 |
+| RTC backup | CR2032一次電池 + holder + R47 100 Ohm | 充電回路は設けず、R47を介してSTM32 VBATへ接続 |
 
 - MCUのVDD/VDDAとVREF+は`+3V3`へ接続し、VBATだけをCR2032由来の`VBAT_RTC`へ接続する。各電源pin直近へ100 nFを置く。VDDAはパッケージ内部でVDDへ結線されるため専用railは不要であり、旧`+3V3_A` netは廃止する。VREF+は`+3V3`直結とし、VREFBUFは有効化しない。
 - VBUS側のbulk容量は10 uFを超えない。USB 2.0はdevice側のVBUS容量を10 uFまでとしており、R36の0 Ohmは突入電流を制限しない。
@@ -313,7 +313,7 @@ clock初期化はVoltage Range 1へ設定して`VOSF=0`を確認し、Flash late
 
 ### 6.6.1 成立条件
 
-**TIM2は±0.5 ppm TCXOを直接クロック源とするため、未補正の最悪周波数誤差は5分で±0.15 msである。R-013の1 ms/5分に対して0.85 msの余裕を持つ。**
+**TIM2は温度安定度±1.5 ppmのC22434890をU14でCMOS化したclockを基準とする。GNSS校正時とholdover中の温度が異なる最悪条件ではpeak-to-peakの3.0 ppmを適用し、TCXO寄与は5分で0.900 msとする。U14の固定伝搬遅延は周期ごとに累積しない。公開仕様だけではR-013に十分なmarginがないため、試作実測で合否を判定する。**
 
 GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値として保存する。GNSS消失後は最後に検証済みの補正値を保持する。HSI16は起動・fault診断用であり、正常時のPPS時刻基準には使用しない。
 
@@ -321,12 +321,12 @@ GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値と�
 
 | 要因 | 5分間の寄与 |
 |---|---:|
-| TCXO周波数誤差（0～40 degCを含むメーカー±0.5 ppm範囲を適用） | ±0.15 ms |
-| TIM2周期補正量子化（62.4 MHz、1 count） | 約0.0048 ms |
-| GNSS→holdover切替時の位相誤差、DPLL推定残差、入力固定offset校正残差 | 0.845 ms以内 |
+| TCXO温度変化による周波数差（±1.5 ppmのpeak-to-peak） | 0.900 ms |
+| TIM2周期補正量子化（48 MHz、1 count/sを300秒積算） | 約0.00625 ms |
+| GNSS→holdover切替時の位相誤差、DPLL推定残差、入力固定offset校正残差、U14 jitter/delay変化 | 0.09375 ms以内 |
 
-- ARR=62,399,999を公称値とし、1 count/秒の補正分解能は約0.0160 ppmである。
-- `Q2C26000V2D4B2`の±0.5 ppm規定を試作温度範囲0～40 degCへ適用できることを個別datasheetでrelease前に確定する。
+- ARR=47,999,999を公称値とし、1 count/秒の補正分解能は約0.0208 ppmである。
+- C22434890の±1.5 ppmは-30～85 ℃に対する温度安定度であり、試作温度範囲0～40 ℃を包含する。初期偏差とagingはGNSS校正で除去し、温度安定度とは区別する。最悪仕様の残余marginは小さいため、0～40 ℃試験を省略しない。
 - DPLL追従/再同期、入力buffer、timer capture、NMEA処理を含めた総誤差を実機で評価し、0～40 degCでGNSS消失後5分の誤差1 ms以下を合否条件とする。
 - 内蔵RTC/LSEは電源断中の暦保持用であり、powered holdoverのサブms PPS基準には使用しない。電源断中の時刻精度はLSEの±20 ppm級となり、5分で約6 msが目安である。
 
@@ -354,7 +354,7 @@ GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値と�
 - 既存KiCadファイルは空project scaffoldであり、設計の正本として使用しない。
 - UM982アンテナ接続・給電は本基板のスコープ外とする。
 - GNSS追従中のPPS位相差は1 us以内を設計目標とし、実装後の校正・測定で保証可否を判定する。
-- 相手機器側ハーネス、RTC有効性の外部報告形式、テストパッド点数、取付穴・高さ、TCXO個別datasheet照合は未確定である。`RTC_VALID/INVALID`の内部判定条件はDR-034で確定済みである。26 MHz TCXO HSE bypassと内蔵RTC/LSEを現行構成とする。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
+- 相手機器側ハーネス、RTC有効性の外部報告形式、テストパッド点数、取付穴・高さは未確定である。`RTC_VALID/INVALID`の内部判定条件はDR-034、U2/U14採用品番はDR-050で確定済みである。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
 - EasyEDAでMCU symbolを配置した直後に、symbol上のpin番号を[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)と1本ずつ突き合わせる。版0.20以前のpin番号表には誤りがあったため、表を信用してsymbol確認を省略しない。
 
 ## 8. 検証・合否条件
@@ -365,8 +365,10 @@ GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値と�
 - Mid-360入力での3.3 Vレベル、PPS立上り後430 ms以内のNMEA開始。
 - 23:59:59、月末、年末、うるう年でのVLP向け+1秒処理。
 - NMEA checksum異常、部分受信、PPSのみ消失、NMEAのみ消失、完全消失。
-- 0～40 ℃でGNSS消失後5分の時刻誤差が1 ms以下であること。26 MHz TCXOをHSE bypass/TIM2クロック源とした構成で測定する（§6.6.1）。
-- 0～40 ℃でU2 raw出力、U6出力、PF0入力の振幅・edge・dutyを測定し、PF0 duty 45～55 %を満たすこと。Voltage Range 1、Flash 2 wait stateの順序を含むclock初期化とHSE CSS faultを確認する。
+- 0～40 ℃でGNSS消失後5分の時刻誤差が1 ms以下であること。24 MHz TCXO + U14をHSE bypass/TIM2クロック源とした構成で測定する（§6.6.1）。
+- 0～40 ℃でU2 pin 3の振幅、U14入力common-mode、PF0入力の振幅・edge・duty・jitterを測定し、PF0 duty 45～55 %を満たすこと。Voltage Range 1、Flash 2 wait stateの順序を含むclock初期化とHSE CSS faultを確認する。
+- 0～40 ℃でPLLQ=48 MHzを使用したUSB列挙を確認し、HSI48/CRSへ依存しないこと。
+- LSE loopへ直列抵抗を挿入して安全係数`Sf = (RADD + ESR) / ESR`を測定し、0 ℃、40 ℃、CR2032単独給電で`Sf >= 3`を満たすこと。1 pF以下のprobeでOSC_IN側`Vpp`を測定し、`DL = ESR x (pi F Ctot)^2 x Vpp^2 / 2 < 0.5 uW`を満たすこと。
 - 主電源OFF/ON、電池なし、`INITS=0`、application payload CRC異常、RTC-domain configuration CRC異常を注入し、ES0548 §2.2.11のBDRST sequence、RTC無効化、出力High-Zを確認する。LSE CSSは使用しない。
 - GNSS追従中の出力PPS位相差が1 us以内であること。U4A入力経路の固定offset（概算55～82 ns）を校正した後に判定する。
 - 最大動作時の3.3 V消費電流、電圧droop、U3の表面温度。
