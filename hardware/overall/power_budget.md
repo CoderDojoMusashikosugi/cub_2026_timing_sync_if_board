@@ -6,7 +6,7 @@
 
 ## 3.3 V rail
 
-以下は回路図release前の設計配分であり、部品datasheetの最大値と実測値で更新する。U2/U14はDR-050で確定した。
+以下は回路図release前の設計配分であり、部品datasheetの最大値と実測値で更新する。U2/U14はDR-050、R48/R49のbias値はDR-053で確定した。
 
 | 負荷 | 設計配分 | 条件 |
 |---|---:|---|
@@ -16,7 +16,7 @@
 | U7/U8/U12外部負荷 | 24.0 mA | 12出力すべて2 mA負荷の保守条件 |
 | U2 YXC C22434890 | 2.0 mA | 3.3 V、24 MHz clipped sine、YSO510TP familyの15.1～26 MHz最大値 |
 | U14 TI C544337 | 2.4 mA | LMV7219、datasheet最大値。出力負荷のdynamic分は試作確認 |
-| R48/R49 bias | 0.073 mA | 3.3 V / 45 kOhm。R50の定常差動電流は無視可能 |
+| R48/R49 bias | 0.069 mA | 3.3 V / 48 kOhm。R50の定常差動電流は無視可能 |
 | U11 USB ESD leakage | 0.1 mA | budget上の丸め値 |
 | D2 status LED | 1.5 mA | R24=1 kOhm |
 | pull-up、bias、その他 | 1.0 mA | 同時worst-caseの丸め値 |
@@ -38,7 +38,7 @@ XC6206P332MR-Gの採用packageに対する`theta_JA`と許容junction温度は�
 
 ## TCXO rail
 
-U2 C22434890とU14 C544337は`+3V3`から給電する。C19 AC結合、R48/R49/C20の1.10 V reference、R50 input bias、C21 decouplingを使用し、`+2V8_CLK`とU15は使用しない。旧C48677994/C51822852/C51966238の電流値は流用しない。
+U2 C22434890とU14 C544337は`+3V3`から給電する。C19 AC結合、R48/R49/C20の1.031 V reference、R50 input bias、C21 decouplingを使用し、`+2V8_CLK`とU15は使用しない。旧C48677994/C51822852/C51966238の電流値は流用しない。
 
 ## VBATとCR2032
 

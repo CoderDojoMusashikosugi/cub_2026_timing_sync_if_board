@@ -1,6 +1,7 @@
 # MCU・信号割当
 
 - 対象MCU: `STM32G0B1RBT6`、LQFP-64
+- 更新日: 2026-08-15（DR-052のNC化・テストパッド割当、DR-053のclock bias値を反映）
 - 状態: 2026-08-11にDR-012として物理pin番号を全面修正した。**旧版のpin 1～32および40～41は実物と不一致であり使用してはならない。** GPIO名とAF番号は旧版のまま正しい
 - 根拠: **ST `STM32G0B1xB/xC/xE` datasheet DS13560 Rev 6 のFigure 8（GP版pinout）およびTable 12（LQFP64-GP列）** で全pin確認済み。補助としてCubeMX pin database `mcu/STM32G0B1R(B-C-E)Tx.xml`、ST生成pinctrlデータ（AF番号）、CMSISヘッダ`stm32g0b1xx.h`（timer bit幅）、KiCad symbol library
 - **品種の固定: 本表は`STM32G0B1RBT6`（GP版、`_RxT`）専用である。** N接尾辞品`STM32G0B1RBT6N`（`_RxTxN`）はpin 40/41が`VSS`/`VDDIO2`で、PD8/PD9が存在しない非互換pinoutである（DS13560 Figure 8、Table 2）。BOMのMPNをN接尾辞なしで固定し、差し替えない。本設計はUCPDを使用しないためGP版で不足はない
@@ -57,12 +58,12 @@ J1 VBUS -> VBUS_RAW -> (F1 || R36) -> VBUS_PROTECTED -> U3 / board loads
 | 15 | PC2 | GPIO | `NC_PC2` | 未使用、回路図上NC |
 | 16 | PC3 | GPIO | `NC_PC3` | 未使用、回路図上NC |
 | 17 | PA0 | USART4_TX (AF4) | `VLP_NMEA_TX_RAW` | TXINV有効、U7D -> J4 pin 3 |
-| 18 | PA1 | GPIO | `SYNC_STATUS` | GNSS追従/HOLDOVER/再同期状態 |
+| 18 | PA1 | GPIO | `NC_PA1` | 未使用、回路図上NC。状態はJetson `GET_STATUS`とstatus LEDで通知する |
 | 19 | PA2 | USART2_TX (AF1) | `JETSON_TX_RAW` | U7B -> J3 pin 3 |
 | 20 | PA3 | USART2_RX (AF1) | `JETSON_RX` | U4C HC14出力、RXINV有効 |
 | 21 | PA4 | USART6_TX (AF3) | `SPR_NMEA_TX_RAW` | U8D -> J6 pin 3。**`TT` = 3.6 V耐圧のみ** |
 | 22 | PA5 | TIM2_CH1_ETR (AF2) | `GNSS_PPS_MON` | U4A HC14出力、falling-edge capture。**`TT` = 3.6 V耐圧のみ** |
-| 23 | PA6 | TIM3_CH1 (AF1) | `TP_PPS_DEBUG` | DR-014により生成PPSから解放。監視用test padとして残す |
+| 23 | PA6 | GPIO | `NC_PA6` | 未使用、回路図上NC。生成PPSはPC5/TP6で測定する |
 | 24 | PA7 | GPIO | `STATUS_LED_N` | status LED |
 | 25 | PC4 | GPIO | `NC_PC4` | 未使用、回路図上NC。VBAT monitorを採用する場合の候補（OI-005） |
 | 26 | PC5 | TIM2_CH2 (AF2) | `PPS_GENERATED` | **常時使用するMCU hardware timer PPS。32-bit TIM2で生成** |
@@ -86,19 +87,19 @@ J1 VBUS -> VBUS_RAW -> (F1 || R36) -> VBUS_PROTECTED -> U3 / board loads
 | 44 | PA12 | USB_DP | `USB_D+` | USB Type-C |
 | 45 | PA13 | SWDIO | `SWDIO` | SWD pad TP1 |
 | 46 | PA14-BOOT0 | SWCLK/BOOT0 | `SWCLK_BOOT0` | SWD pad TP2/BOOT control |
-| 47 | PA15 | GPIO | `TP_SPARE4` | 予備/test pad。専用DFU buttonには使用しない |
+| 47 | PA15 | GPIO | `NC_PA15` | 未使用、回路図上NC。専用DFU buttonには使用しない |
 | 48 | PC8 | GPIO | `NC_PC8` | 未使用、回路図上NC |
 | 49 | PC9 | GPIO | `NC_PC9` | 未使用、回路図上NC |
-| 50 | PD0 | GPIO | `TP_SPARE6` | spare/test pad |
-| 51 | PD1 | GPIO | `TP_SPARE7` | spare/test pad |
-| 52 | PD2 | GPIO | `TP_SPARE8` | spare/test pad |
-| 53 | PD3 | GPIO | `TP_SPARE9` | spare/test pad |
+| 50 | PD0 | GPIO | `NC_PD0` | 未使用、回路図上NC。条件付きreset pull-down対象 |
+| 51 | PD1 | GPIO | `NC_PD1` | 未使用、回路図上NC |
+| 52 | PD2 | GPIO | `NC_PD2` | 未使用、回路図上NC。条件付きreset pull-down対象 |
+| 53 | PD3 | GPIO | `NC_PD3` | 未使用、回路図上NC |
 | 54 | PD4 | GPIO | `NC_PD4` | 未使用、回路図上NC |
 | 55 | PD5 | GPIO | `NC_PD5` | 未使用、回路図上NC |
 | 56 | PD6 | GPIO | `NC_PD6` | 未使用、回路図上NC |
-| 57 | PB3 | GPIO | `PPS_PATH_STATUS` | PPS出力状態/test |
-| 58 | PB4 | GPIO | `GNSS_NMEA_VALID` | firmware status/test |
-| 59 | PB5 | GPIO | `TP_SPARE5` | spare/test pad |
+| 57 | PB3 | GPIO | `NC_PB3` | 未使用、回路図上NC。生成源はTP6、各出力はコネクタpin 2で実測する |
+| 58 | PB4 | GPIO | `NC_PB4` | 未使用、回路図上NC。GNSS有効性はJetson `GET_STATUS`で通知する |
+| 59 | PB5 | GPIO | `NC_PB5` | 未使用、回路図上NC |
 | 60 | PB6 | GPIO | `NC_PB6` | 未使用、回路図上NC |
 | 61 | PB7 | GPIO | `NC_PB7` | 未使用、回路図上NC |
 | 62 | PB8 | GPIO | `AUX1_TX_OE_N` | 予備UART 1 TX buffer enable、100 kOhm pull-up |
@@ -136,10 +137,10 @@ DS13560 Table 11の`_s`は「I/O, supplied from VDDIO2 only」を意味する。
 | `AUX1_TX_RAW` / `AUX1_RX` | PA9 / PA10 | `FT_s` / `FT_fds` |
 | `USB_D-` / `USB_D+` | PA11 / PA12 | `FT_fus` |
 | `SWDIO` / `SWCLK_BOOT0` | PA13 / PA14 | `FT_es` / `FT_s` |
-| `TP_SPARE4` | PA15 | `FT_s` |
+| `NC_PA15` | PA15 | `FT_s` |
 | `VLP_TX_OE_N` / `MID_TX_OE_N` | PB13 / PB14 | `FT_fs` |
 | `AUX2_TX_RAW` / `AUX2_RX` | PC6 / PC7 | `FT_s` |
-| `TP_SPARE6`～`TP_SPARE9` | PD0～PD3 | `FT_cs` / `FT_ds` |
+| `NC_PD0`～`NC_PD3` | PD0～PD3 | `FT_cs` / `FT_ds` |
 
 - **powered時刻機能の中核はVDD domainである。** `CLK_24M`（PF0）、`PPS_GENERATED`（PC5）、`GNSS_PPS_MON`（PA5）、Jetson UART（PA2/PA3）、VLP/Mid/Spresense TX（PA0/PB0/PA4）、`PPS_OE_N`（PB1）はいずれも`_s`ではない。LSE/内蔵RTC/VBATはbackup domainで暦を保持する。
 - `VLP_TX_OE_N`/`MID_TX_OE_N`が万一isolationされても、外付け100 kOhm pull-upがbufferをHigh-Zへ保つため安全側に失敗する。
@@ -182,8 +183,25 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
   - 周波数補正も位相補正も**ARR**で行う。位相はQ-017の±100 us/s以内でARRを増減し、秒境界を歩かせて戻す。
   - `CCR2 = 4800000`はHigh幅100 ms（Q-011）を決める固定値であり、ARRを変えても更新しない。
   - `CCR2`を位相補正に使わない。使ってもPPSの基準edgeは動かない。
-- TIM2は他用途へ割り当てない。PA6/TIM3_CH1は監視用test padとして残す。
+- TIM2は他用途へ割り当てない。PA6/TIM3_CH1も使用せず、回路図上NCとする。生成PPSはPC5に接続したTP6で直接測定する。
 - `PPS_GENERATED`をPC5へ移したことによるreset時の懸念はない。reset中の出力状態は`PPS_OE_N`（PB1、100 kOhm pull-up）が74LVC125AをHigh-Zに保つことで決まり、PC5のreset時状態には依存しない。
+
+## テストパッド割当
+
+初回試作のテストパッドは次の8点だけとする。status/spare GPIO用パッドと、コネクタから測定できる通常PPS出力の重複パッドは設けない。
+
+| TP | Net | 用途・配置 |
+|---|---|---|
+| TP1 | `SWDIO` | SWD復旧 |
+| TP2 | `SWCLK_BOOT0` | SWD復旧 |
+| TP3 | `NRST` | SWD復旧 |
+| TP4 | `+3V3` | SWD reference/給電確認 |
+| TP5 | `GND` | SWD GND。TP6のprobe GNDとしても使える位置へ配置 |
+| TP6 | `PPS_GENERATED` | MCU生成源の測定。TP5近傍に配置 |
+| TP7 | `VLP_PPS_OUT` | J4 pin 1 GND近傍、出力測定と1.5 kOhm負荷接続を兼用 |
+| TP8 | `VLP_NMEA_INV_OUT` | J4 pin 1 GND近傍、1.5 kOhm負荷接続と波形測定 |
+
+J3/J5/J6/J7/J8のPPSは各コネクタpin 2から、pin 1をGNDとして測定する。恒久パッドが必要なのは、buffer前の生成源TP6と、1.5 kOhm負荷を仮付けするVLP用TP7/TP8だけとする。PPS間チャネルスキュー試験には測定用ハーネスを使用する。
 
 ## コネクタ割当
 
@@ -291,7 +309,7 @@ U4 `74HC14D,653`はIoff非対応であり、4.7 kOhmは入力clamp電流を制�
 +3V3 -> U2 YXC OW7EL89CENUYO3YLC-24M pin 4 VCC
 GND -> U2 pin 1 / pin 2 GND
 U2 pin 3 clipped-sine OUT -> C19 1 nF -> U14 pin 3 +IN
-+3V3 -> R48 30 kOhm -> VREF_CLK -> R49 15 kOhm -> GND
++3V3 -> R48 33 kOhm -> VREF_CLK -> R49 15 kOhm -> GND
 VREF_CLK -> C20 100 nF -> GND
 VREF_CLK -> U14 pin 4 -IN
 VREF_CLK -> R50 10 kOhm -> U14 pin 3 +IN
@@ -349,7 +367,7 @@ option byte変更前にTP1～TP5の導通を確認し、`DBGMCU_IDCODE.REV_ID`�
 | `OE_N`初期値 | 全`OE_N` GPIOは出力値をHighへ設定した後にoutput modeへ切り替える。Low glitchを出さない |
 | VREFBUF | VREF+を外部から3.3 Vで駆動するため有効化しない |
 | `PWR_CR2`の`PVM_VDDIO2[2:0]` | **`110`（Monitoring bypassed; IOs enabled）を設定する。** reset値000は「IOs in isolation mode」であり、USB・SWD・AUX1/AUX2 UART・VLP/Mid TXのOE_NがVDDIO2 domainに属する。上記「VDDIO2 domainのI/O」参照 |
-| `SYSCFG_CFGR1`の`UCPD1_STROBE` / `UCPD2_STROBE` | **起動時にstrobeしてdead-battery pull-downを無効化する。** DS13560 Table 12 note 4により、reset時PA8/PB15/PD0/PD2にpull-downが present し得る（PA9/PA10/PD1/PD3の電圧に依存）。PA8/PB15は未使用、PD0～PD3はtest padのため現状は無害だが、test padを使う場合に必要 |
+| `SYSCFG_CFGR1`の`UCPD1_STROBE` / `UCPD2_STROBE` | **起動時にstrobeしてdead-battery pull-downを無効化する。** DS13560 Table 12 note 4により、reset時PA8/PB15/PD0/PD2にpull-downが present し得る（PA9/PA10/PD1/PD3の電圧に依存）。これらはすべて回路図上NCだが、将来のpin再利用に備えて初期化を維持する |
 | clock tree | 電源投入後5 ms以上待ち、HSE bypass、HSE=24 MHz、PLLM=2、PLLN=16、PLLR=4、SYSCLK/TIM2=48 MHzを設定。Voltage Range 1の`VOSF=0`確認後、Flashを2 wait stateへ設定してからSYSCLKを切り替える。PF0 duty 45～55 %を前提とし、HSE CSSを有効化する |
 | USB clock | PLLQ=4で48 MHzを生成する。HSI48/CRSは使用しない |
 | 内蔵RTC | LSEをclock源とし、`LSEDRV=10`、`LSECSSON=0`とする。backup registerにsignature/version、TCXO補正値、同期時刻、application payload CRC、RTC-domain configuration CRCを保存する。PC13へTAMP/RTC_OUTを割り付けない。RTC INITを抜けた後に再度INITへ入る場合は、`BYPSHAD`をclearして`RSF`の立上りを待ち、calendar全registerを1回のINIT sessionで書く（ES0548 §2.9.1） |

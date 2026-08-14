@@ -1,12 +1,12 @@
 # GPSタイミング同期インターフェース基板 設計書
 
 - 文書状態: 回路設計ベースライン確定 / 機構条件と実機検証結果待ち
-- 更新日: 2026-08-13
-- 文書版: 0.27
+- 更新日: 2026-08-15
+- 文書版: 0.28
 - 製造先: JLCPCB PCBA
 - EDA: EasyEDA Pro
 - 文書種別: 最終設計の正本。検討経緯は[`considerations.md`](./considerations.md)、現在の未解決事項は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)に分離する
-- 最新部品選定: [`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)（DR-050）
+- 最新clock部品選定: [`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)（U2/U14はDR-050、bias値はDR-053）
 - メーカー一次資料: [`../hardware/datasheets/`](../hardware/datasheets/)
 
 ## 1. 目的
@@ -116,10 +116,10 @@ flowchart LR
 - 生成PPSとGNSS PPSキャプチャは32-bitのTIM2へ集約する。生成PPSはPC5/TIM2_CH2、GNSS PPSキャプチャはPA5/TIM2_CH1を使用し、CH3は未使用とする。16-bitのTIM3は1 Hz生成に必要な分解能が不足するため使用しない。詳細は[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)の「PPS/holdoverのtimer構成」を正とする。
 - MCUはGNSS PPSをタイマー入力キャプチャで監視し、位相誤差と周波数誤差を推定する。GNSS PPSはU4A 74HC14で反転するため立下りedgeでキャプチャする。
 - GNSS異常時はPPS生成を継続し、GNSS有効中に学習した24 MHz TCXOの周波数補正値を保持する。TCXOはTIM2のクロック源そのものなので、外部RTCとの周波数比計測は不要である。
-- U2はYXC `OW7EL89CENUYO3YLC-24M` / C22434890を採用する。3.3 V、clipped sine 0.8 Vp-p min、10 kOhm // 10 pF、-30～85 ℃で温度安定度±1.5 ppm、消費電流2.0 mA maxである。C19でAC結合して1.10 Vへbiasし、U14 TI `LMV7219M7X/NOPB` / C544337で3.3 V CMOS化する。U14 OUTをR45経由でPF0/OSC_INへ入力し、STM32はHSE bypass mode、PF1/OSC_OUTは未接続とする。PF0入力は24 MHz、duty 45～55 %を満たすことを試作合否条件とする。
+- U2はYXC `OW7EL89CENUYO3YLC-24M` / C22434890を採用する。3.3 V、clipped sine 0.8 Vp-p min、10 kOhm // 10 pF、-30～85 ℃で温度安定度±1.5 ppm、消費電流2.0 mA maxである。C19でAC結合して1.031 Vへbiasし、U14 TI `LMV7219M7X/NOPB` / C544337で3.3 V CMOS化する。U14 OUTをR45経由でPF0/OSC_INへ入力し、STM32はHSE bypass mode、PF1/OSC_OUTは未接続とする。PF0入力は24 MHz、duty 45～55 %を満たすことを試作合否条件とする。
 - GNSS復帰時は正常なPPS/NMEAを5回以上連続受信してから再同期を開始する。出力PPS周期の補正量を1秒当たり±100 usに制限し、PPS間隔を0.999900～1.000100秒の範囲で緩やかにGNSS位相へ戻す。
 - 再同期中も短パルス、二重パルス、パルス欠落、秒の重複・飛越を発生させない。位相差が通常のslewで安全に回復できないほど大きい場合は同期異常として通知する。
-- 各出力には個別の直列抵抗とテストポイントを設ける。初回プロトタイプではGH信号ESD footprint自体を設けず、同一ロボット内・電源OFF中のみ接続という運用条件を適用する。
+- 各PPS出力には個別の直列抵抗を設ける。測定は原則として各コネクタpin 2とpin 1 GNDから行い、恒久テストパッドは生成源`PPS_GENERATED`のTP6と、VLP負荷試験用TP7/TP8だけとする。初回プロトタイプではGH信号ESD footprint自体を設けず、同一ロボット内・電源OFF中のみ接続という運用条件を適用する。
 
 #### 4.1.1 GNSS PPSに対する遅延・位相差
 
@@ -175,7 +175,7 @@ flowchart LR
 - 内蔵system bootloaderのUSB DFUでファームウェアを書き込めるよう、BOOT操作とRESET操作を基板上で可能にする。
 - ファームウェア異常時のsource-level debugに備え、SWDIO、SWCLK、NRST、3V3、GNDのテストパッドを残す。
 - D+/D-には低容量ESD保護と必要に応じて22 Ohm直列抵抗を置き、差動配線を短く等長にする。
-- SW1 RESETとSW2 BOOTには小型Basic `TS-1088-AR02016` / C720477を使用する。PA15の専用DFU buttonは設けず予備GPIOとし、正常時はUSB CDC command、異常時はBOOT+RESETでDFUへ入る。
+- SW1 RESETとSW2 BOOTには小型Basic `TS-1088-AR02016` / C720477を使用する。PA15の専用DFU buttonおよび予備test padは設けずNCとし、正常時はUSB CDC command、異常時はBOOT+RESETでDFUへ入る。
 - PA14-BOOT0は100 kOhm pull-down、BOOT switch側は1 kOhm seriesとする。製造時に外部BOOT0を使用するoption byteを設定する。NRSTは10 kOhm pull-up、100 nF to GNDとする。
 - SWD debug接続後にBOOT+RESETでDFUへ入る場合は、STM32G0B1 errata ES0548 §2.2.8に従い、probeを外してUSBを含む全主電源を完全power cycleしてから操作する。
 
@@ -227,7 +227,7 @@ flowchart LR
 
 ### 6.1.1 クロック構成
 
-基板にはU2 YXC `OW7EL89CENUYO3YLC-24M` / C22434890、U14 TI `LMV7219M7X/NOPB` / C544337、32.768 kHz LSE水晶を実装する。U2のclipped-sine出力はC19と1.10 V bias回路を経てU14で3.3 V CMOS化し、R45経由でHSE bypass/PLL/TIM2を駆動する。LSEはCR2032でバックアップされるSTM32内蔵RTC専用とする。旧C48677994/C51822852/C51966238は採用解除した。
+基板にはU2 YXC `OW7EL89CENUYO3YLC-24M` / C22434890、U14 TI `LMV7219M7X/NOPB` / C544337、32.768 kHz LSE水晶を実装する。U2のclipped-sine出力はC19と1.031 V bias回路を経てU14で3.3 V CMOS化し、R45経由でHSE bypass/PLL/TIM2を駆動する。LSEはCR2032でバックアップされるSTM32内蔵RTC専用とする。旧C48677994/C51822852/C51966238は採用解除した。
 
 clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定して`VOSF=0`を確認し、Flash latencyを2 wait stateへ上げた後にPLLM=2、PLLN=16、PLLR=4のPLLへSYSCLKを切り替える。PLLQ=4をUSBへ供給する。LSEは`LSEDRV=10`（medium-high）とし、VBAT保持と競合するSTM32G0B1 errata ES0548 §2.2.1を避けるため`LSECSSON=0`とする。
 
@@ -253,8 +253,8 @@ clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定し�
 | LSE crystal | SC-32S32.768kHz20PPM7pF | C97604 | 32.768 kHz、CL=7 pF、±20 ppm、SMD3215 | 採用。内蔵RTC/calendar専用。2026-08-12 API価格$0.1886 |
 | USB ESD | USBLC6-2SC6 | C7519 | USB 2.0対応2-line ESD保護 | 採用。D+/D-コネクタ直近へ実装 |
 
-- U2はpin 1/2=GND、pin 3=OUT、pin 4=`+3V3`。U14はpin 1=OUT、2=GND、3=+IN、4=-IN、5=`+3V3`とする。C19 AC結合、R48=30 kOhm/R49=15 kOhm/C20の1.10 V reference、R50 bias、C21 decouplingを実装し、U14 pin 1をR45=33 Ohm経由でPF0へ接続する。U15/`+2V8_CLK`は配置しない。
-- C22434890は通常SMT、C544337はExtended/SMTである。受動部品とR45を含むclock chainは約$1.8346で、旧C51822852単体$23.0346から約92.0 %削減する。
+- U2はpin 1/2=GND、pin 3=OUT、pin 4=`+3V3`。U14はpin 1=OUT、2=GND、3=+IN、4=-IN、5=`+3V3`とする。C19 AC結合、R48=33 kOhm/R49=15 kOhm/C20の1.031 V reference、R50 bias、C21 decouplingを実装し、U14 pin 1をR45=33 Ohm経由でPF0へ接続する。U15/`+2V8_CLK`は配置しない。
+- C22434890は通常SMT、C544337はExtended/SMTである。DR-050時点の受動部品とR45を含むclock chainは約$1.8346だったが、DR-053でR48を変更したため現行価格は発注時に再確認する。
 - JLCPCBのBasic/Promotional区分は変動するため、発注用BOM作成時に公式parts libraryで再確認する。
 - STM32G0B1RBT6は[ST製品情報](https://www.st.com/en/microcontrollers-microprocessors/stm32g0b1rb.html)および[JLCPCB C5143679](https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RBT6/C5143679)、U2/U14は[YXC YSO510TP family資料](https://www.yxc.hk/uploadfiles/2023/07/20230710175706329.pdf)と[TI LMV7219資料](https://www.ti.com/lit/ds/symlink/lmv7219.pdf)を参照。選定詳細は[`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)を正とする。
 
@@ -354,13 +354,13 @@ GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値と�
 - 既存KiCadファイルは空project scaffoldであり、設計の正本として使用しない。
 - UM982アンテナ接続・給電は本基板のスコープ外とする。
 - GNSS追従中のPPS位相差は1 us以内を設計目標とし、実装後の校正・測定で保証可否を判定する。
-- 相手機器側ハーネス、RTC有効性の外部報告形式、テストパッド点数、取付穴・高さは未確定である。`RTC_VALID/INVALID`の内部判定条件はDR-034、U2/U14採用品番はDR-050で確定済みである。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
+- 相手機器側ハーネス、RTC有効性の外部報告形式、取付穴・高さは未確定である。テストパッドはDR-052でTP1～TP8へ確定した。`RTC_VALID/INVALID`の内部判定条件はDR-034、U2/U14採用品番はDR-050で確定済みである。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
 - EasyEDAでMCU symbolを配置した直後に、symbol上のpin番号を[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)と1本ずつ突き合わせる。版0.20以前のpin番号表には誤りがあったため、表を信用してsymbol確認を省略しない。
 
 ## 8. 検証・合否条件
 
-- 各出力のHigh/Low電圧、立上り/立下り、PPS間チャネルスキュー。測定用にPPS 6出力と`PPS_GENERATED`のテストパッドを設ける（OI-006）。
-- J4 PPS/NMEAへ各1.5 kOhm負荷を接続し、High >3.0 V、Low <1.2 Vであること。VLP-32C実機でPPS lock、反転NMEA decode、UTC +1秒を確認する。
+- 各出力のHigh/Low電圧、立上り/立下り、PPS間チャネルスキュー。`PPS_GENERATED`はTP6、6系統のbuffer出力は測定用ハーネスで各コネクタpin 2（GND=pin 1）から測定する。
+- J4 PPS/NMEAへ各1.5 kOhm負荷を接続し、High >3.0 V、Low <1.2 Vであること。PPSはTP7、NMEAはTP8、GNDはJ4 pin 1を使用する。VLP-32C実機でPPS lock、反転NMEA decode、UTC +1秒を確認する。
 - VLP-32C入力での論理反転、NMEA完了～PPS立上り300 ms以上、PPS立下り～NMEA開始50 ms以上。
 - Mid-360入力での3.3 Vレベル、PPS立上り後430 ms以内のNMEA開始。
 - 23:59:59、月末、年末、うるう年でのVLP向け+1秒処理。

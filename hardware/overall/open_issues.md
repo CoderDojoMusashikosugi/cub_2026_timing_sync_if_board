@@ -1,8 +1,8 @@
 # 未解決事項・リリース条件
 
-- 更新日: 2026-08-13
+- 更新日: 2026-08-15
 - 対象: 初回試作
-- 状態: DR-050で24 MHz C22434890とcomparatorを採用してOI-010を更新し、旧OI-011のbuffer不要判断を置換した。R-013は試作実測待ちである。残る判断待ちはOI-001/OI-003/OI-006/OI-009である。
+- 状態: DR-052でテストパッドを必要なTP1～TP8へ削減してOI-006を解決し、DR-053でR48=33 kOhm / 1.031 V biasへ確定した。R-013は試作実測待ちである。残る判断待ちはOI-001/OI-003/OI-009である。
 
 ## 判断待ち
 
@@ -10,7 +10,6 @@
 |---|---|---|---|
 | OI-001 | J2～J8ハーネスの相手機器側connector/pin、線色、線長 | 基板側pinだけ確定。TBDを推測で埋めない | 試作ハーネス製作前 |
 | OI-003 | 取付穴と最大部品高さ | 外形75 mm x 50 mm。穴は筐体条件取得まで配置しない | PCB外形・配置release前 |
-| OI-006 | 出力テストポイントの点数と配置 | 設計書§4.1は出力別テストポイントを要求し、§8はPPS間チャネルスキュー測定を合否条件にしているが、BOMのTPはSWD用5点だけ（DR-019）。PPS 6出力と`PPS_GENERATED`に加え、J4の1.5 kOhm負荷を仮付けできるパッドを設ける。テストパッドはPCB図形で部品費は発生しない | PCB外形・配置release前 |
 | OI-009 | VBUS側bulk容量の値とC11/C12/C13の割当 | USB 2.0はdevice側VBUS容量を10 uFまでとし、現BOMは10 uF x 3を「VBUS/3V3/LDO」と記載するだけで割当が未確定（DR-022）。R36の0 Ohmは突入電流を制限しない。**推奨: VBUS側を4.7 uFとして上限に余裕を持たせ、3.3 V側とLDO出力に10 uFを置く。** どのcapがどのnetかを回路図で確定させる | 回路図入力前 |
 
 ## 解決済み
@@ -20,9 +19,10 @@
 | OI-002 | DR-033で旧DS3231 32 kHz captureを廃止し、TCXOをPF0/HSE bypassへ入力する | timer clock自体を高安定度化し、CH3 captureと比率推定を不要にする。DR-050では24 MHz ±1.5 ppm品をcomparatorでCMOS化する |
 | OI-004 | DR-033/DR-050でPF0を`CLK_24M`、PF1をNC、PC14/PC15をLSEへ確定する | HSE bypass TCXOと内蔵RTC/LSEによりholdoverとbattery-backed calendarを分離する |
 | OI-005 | 「RTC電池状態」は電圧値ではなく`RTC_VALID/INVALID`とする | 使用する全backup registerのsignature/versionとapplication payload CRC、RTC-domain configuration CRC、`INITS`、RTCSEL/LSEON/LSERDY/RTCEN、calendar範囲、SSR単調性から判定する。power-on時の不整合はES0548 §2.2.11のBDRST sequenceで初期化する。これはVBAT期間中のLSE連続動作や電池残量を保証しない。ADC分圧は追加しない |
+| OI-006 | DR-052でテストパッドをTP1～TP8へ確定する | TP1～TP5=SWD、TP6=`PPS_GENERATED`、TP7=`VLP_PPS_OUT`、TP8=`VLP_NMEA_INV_OUT`。通常のPPS出力は測定用ハーネスで各コネクタpin 2から測り、pin 1をGNDとする。TP6はTP5近傍、TP7/TP8はJ4 pin 1近傍へ配置する。status/spare GPIOおよび通常PPS出力の重複パッドは設けない |
 | OI-007 | VLPのR15/R16は10 Ohm、その他の出力は33 Ohmとする | VLPは初回実力評価とし、10 Ohmで不要な電圧降下を小さくする |
 | OI-008 | 初回は3.3 V `74LVC125A`出力の実測判定とし、専用driverを追加しない | 1.5 kOhm負荷とVLP実機で判定し、不合格なら次版でdriverを再設計する。未規定動作点の補間値は保証根拠に使わない |
-| OI-010 | YXC `OW7EL89CENUYO3YLC-24M` / C22434890をU2、TI `LMV7219M7X/NOPB` / C544337をU14へ採用する | 24 MHz、clipped sine 0.8 Vp-p min、-30～85 ℃で±1.5 ppm。C19 AC結合と1.10 V bias後、U14で3.3 V CMOS化する。通常SMT、clock鎖約$1.83。根拠は[`../reviews/oi010_tcxo_selection.md`](../reviews/oi010_tcxo_selection.md) |
+| OI-010 | YXC `OW7EL89CENUYO3YLC-24M` / C22434890をU2、TI `LMV7219M7X/NOPB` / C544337をU14へ採用する | 24 MHz、clipped sine 0.8 Vp-p min、-30～85 ℃で±1.5 ppm。C19 AC結合とDR-053の1.031 V bias後、U14で3.3 V CMOS化する。通常SMT、clock鎖約$1.83（R48変更後は発注時再確認）。根拠は[`../reviews/oi010_tcxo_selection.md`](../reviews/oi010_tcxo_selection.md) |
 | OI-011 | 専用clock LDOは削除し、U14 comparatorとC19/C20/C21/R48-R50を使用する | DR-050で旧「buffer不要」を撤回。clipped-sine U2をPF0に適合させる最小回路とし、固定伝搬遅延は周波数へ累積しないことを試作確認する |
 
 ## EasyEDA入力前の必須確認
@@ -33,7 +33,7 @@
 - [ ] pin 3=PC13（NC）、pin 4/5=PC14/PC15（X1 LSE）、pin 10=PF0（`CLK_24M`）、pin 11=PF1（NC）、pin 26=PC5（`PPS_GENERATED`）であることを確認する。
 - [ ] `+3V3_A`を使用せず、VREF+を`+3V3`へ直結して100 nFを置く。pin 8は`VDD/VDDA`、pin 9は`VSS/VSSA`が正しい名称であり、VDDA専用decouplingは不要。
 - [ ] BOMのMCU MPNが`STM32G0B1RBT6`（**N接尾辞なし**）であることを確認する。N接尾辞品はpin 40/41が`VSS`/`VDDIO2`で非互換。
-- [ ] 解決済みOI-002/OI-004/OI-005/OI-007/OI-008/OI-010/OI-011と、未解決OI-006/OI-009の結果を反映する。
+- [ ] 解決済みOI-002/OI-004/OI-005/OI-006/OI-007/OI-008/OI-010/OI-011と、未解決OI-009の結果を反映する。
 - [ ] U2=C22434890、U14=C544337、C19/C20/C21、R48/R49/R50を配置し、旧C48677994/C51822852/C51966238およびU15/`+2V8_CLK`を配置しない。
 
 ## EasyEDA設計後の確認
