@@ -38,7 +38,7 @@ XC6206P332MR-Gの採用packageに対する`theta_JA`と許容junction温度は�
 
 ## TCXO rail
 
-U2 C22434890とU14 C544337は`+3V3`から給電する。C19 AC結合、R48/R49/C20の1.031 V reference、R50 input bias、C21 decouplingを使用し、`+2V8_CLK`とU15は使用しない。旧C48677994/C51822852/C51966238の電流値は流用しない。
+U2 C22434890とU14 C544337は`3V3`から給電する。C19 AC結合、R48/R49/C20の1.031 V reference、R50 input bias、C21 decouplingを使用し、`+2V8_CLK`とU15は使用しない。旧C48677994/C51822852/C51966238の電流値は流用しない。
 
 ## VBATとCR2032
 

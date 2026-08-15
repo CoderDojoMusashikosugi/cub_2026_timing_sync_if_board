@@ -9,13 +9,15 @@
 
 | Ref | 接続先 | GH pin 1 | GH pin 2 | GH pin 3 | GH pin 4 |
 |---|---|---|---|---|---|
-| J2 | UM982系 | GND | PPS input | UM982 NMEA TX input | - |
-| J3 | Jetson | GND | PPS output | board TX / Jetson RX | board RX / Jetson TX |
-| J4 | VLP-32C | GND | PPS output | inverted NMEA output | - |
-| J5 | Mid-360 | GND | PPS output | NMEA output | - |
-| J6 | Spresense level board | GND | 3.3 V PPS output | 3.3 V NMEA output | - |
-| J7 | AUX1 | GND | PPS output | board TX / AUX RX | board RX / AUX TX |
-| J8 | AUX2 | GND | PPS output | board TX / AUX RX | board RX / AUX TX |
+| J2 | UM982系 | GND | `GNSS_PPS_IN` | `GNSS_NMEA_RX_IN` | - |
+| J3 | Jetson | GND | `JETSON_PPS_OUT` | `JETSON_TX_OUT` | `JETSON_RX_IN` |
+| J4 | VLP-32C | GND | `VLP_PPS_OUT` | `VLP_TX_OUT` | - |
+| J5 | Mid-360 | GND | `MID360_PPS_OUT` | `MID360_TX_OUT` | - |
+| J6 | Spresense IMU level board | GND | `IMU_PPS_OUT` | `IMU_TX_OUT` | - |
+| J7 | AUX1 | GND | `AUX1_PPS_OUT` | `AUX1_TX_OUT` | `AUX1_RX_IN` |
+| J8 | AUX2 | GND | `AUX2_PPS_OUT` | `AUX2_TX_OUT` | `AUX2_RX_IN` |
+
+入力名は直列抵抗よりU4側のEasyEDAラベルを記載する。コネクタから直列抵抗までの短い区間は無名netだが、ハーネス信号の機能は変わらない。J6の`IMU_*`はSpresense IMU `CXD5602PWBIMU1J`向け系統を表し、接続先や3.3 V出力条件の変更ではない。
 
 この割当はPCB回路の正本である。相手機器側が未確定でも回路設計を継続できるが、ハーネス製造前には下表を埋めて導通検査票としてreleaseする。
 

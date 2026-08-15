@@ -10,7 +10,8 @@
 4. `PVM_VDDIO2=110`、UCPD dead-battery strobe、VREFBUF無効を設定する。
 5. U2/U14の安定化に電源投入後5 ms以上待ち、Voltage Range 1、`VOSF=0`、Flash 2 wait state、HSE bypass/PLL、HSE CSSの順にclockを設定する。
 6. PLLQ=4の48 MHzをUSB clockへ選択する。HSI48/CRSは使用しない。
-7. TIM2、UART、DPLL、RTCを初期化し、有効時刻とclockを検証してから必要channelだけenableする。
+7. PA6 `TP_FW_TRACE`はanalog/no-pullのまま維持する。明示的なdebug buildまたは設定時だけ出力dataをLowにしてからGPIO outputへ切り替える。
+8. TIM2、UART、DPLL、RTCを初期化し、有効時刻とclockを検証してから必要channelだけenableする。
 
 ## Clock・USB
 
@@ -31,6 +32,7 @@
 
 ## DPLL・出力
 
+- TP9 `TP_FW_TRACE`は任意イベントの時刻観測用であり、製品機能、fault通知、PPS生成を依存させない。SWOとしては使用しない
 - GNSS PPS/NMEAを5回連続検証してlockする
 - GNSS喪失時は最後に検証済みのARR補正を保持し、RMC=`V`で出力する
 - 復帰時の補正は±100 us/s以内とし、短パルス、二重パルス、欠落、UTC逆行を発生させない
@@ -42,3 +44,4 @@
 - 0～40 ℃でU2出力振幅、U14入力common-mode、PF0 24 MHz、duty 45～55 %、jitter、USB列挙を確認する
 - LSEは`Sf >= 3`、`DL < 0.5 uW`を0 ℃、40 ℃、CR2032単独給電で確認する
 - fault injection、CRC破損、RTC連続INIT、Jetson frame破損、GNSS喪失/復帰を自動試験へ含める
+- 通常buildでPA6がanalog/no-pullであること、debug有効時だけTP9が既定Lowから意図したevent pulseを出すことを確認する

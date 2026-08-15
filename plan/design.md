@@ -2,7 +2,7 @@
 
 - 文書状態: 回路設計ベースライン確定 / 機構条件と実機検証結果待ち
 - 更新日: 2026-08-15
-- 文書版: 0.28
+- 文書版: 0.30
 - 製造先: JLCPCB PCBA
 - EDA: EasyEDA Pro
 - 文書種別: 最終設計の正本。検討経緯は[`considerations.md`](./considerations.md)、現在の未解決事項は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)に分離する
@@ -119,7 +119,7 @@ flowchart LR
 - U2はYXC `OW7EL89CENUYO3YLC-24M` / C22434890を採用する。3.3 V、clipped sine 0.8 Vp-p min、10 kOhm // 10 pF、-30～85 ℃で温度安定度±1.5 ppm、消費電流2.0 mA maxである。C19でAC結合して1.031 Vへbiasし、U14 TI `LMV7219M7X/NOPB` / C544337で3.3 V CMOS化する。U14 OUTをR45経由でPF0/OSC_INへ入力し、STM32はHSE bypass mode、PF1/OSC_OUTは未接続とする。PF0入力は24 MHz、duty 45～55 %を満たすことを試作合否条件とする。
 - GNSS復帰時は正常なPPS/NMEAを5回以上連続受信してから再同期を開始する。出力PPS周期の補正量を1秒当たり±100 usに制限し、PPS間隔を0.999900～1.000100秒の範囲で緩やかにGNSS位相へ戻す。
 - 再同期中も短パルス、二重パルス、パルス欠落、秒の重複・飛越を発生させない。位相差が通常のslewで安全に回復できないほど大きい場合は同期異常として通知する。
-- 各PPS出力には個別の直列抵抗を設ける。測定は原則として各コネクタpin 2とpin 1 GNDから行い、恒久テストパッドは生成源`PPS_GENERATED`のTP6と、VLP負荷試験用TP7/TP8だけとする。初回プロトタイプではGH信号ESD footprint自体を設けず、同一ロボット内・電源OFF中のみ接続という運用条件を適用する。
+- 各PPS出力には個別の直列抵抗を設ける。測定は原則として各コネクタpin 2とpin 1 GNDから行い、信号測定用の恒久テストパッドは生成源`PPS_GENERATED`のTP6、VLP負荷試験用TP7/TP8、PA6の汎用firmware trace用TP9だけとする。初回プロトタイプではGH信号ESD footprint自体を設けず、同一ロボット内・電源OFF中のみ接続という運用条件を適用する。
 
 #### 4.1.1 GNSS PPSに対する遅延・位相差
 
@@ -147,7 +147,7 @@ flowchart LR
 - 入力VBUSはUSB規定内の4.75～5.25 Vとする。MCU、U2 TCXO、U14 comparator、全出力bufferは3.3 Vとし、TCXO専用LDOは設けない。VLP専用電源も設けない。
 - USB Type-CのVBUS 5 Vだけを主電源とする。Jetson用GHおよび他の信号コネクタからは給電しない。
 - USB Type-CはUSB 2.0 device/UFPとして構成し、CC1/CC2へ各5.1 kOhmのRdを接続する。USB PDは実装しない。
-- VBUSの500 mA級リセッタブルヒューズF1とLittelfuse 5 V TVSはfootprintを設けるが、低予算初回はDNPとする。F1と並列のR36 `0603WAF0000T5E` / C21189を実装してVBUSを導通させる。保護variantではR36をDNP、F1を実装し、両方の同時実装は禁止する。TVSは実装しても短時間transient対策であり、XC6206の6 V absolute max以下を保証するOVPではない。
+- VBUSの500 mA級リセッタブルヒューズF1は低予算初回ではDNPとし、F1と並列のR36 `0603WAF0000T5E` / C21189を実装してVBUSを導通させる。D1はPromotionalの単方向TVS `SMF6.0A` / C19077499を初回から実装し、pin 1(K)を`VBUS_PROTECTED`、pin 2(A)をGNDへ接続する。保護variantではR36をDNP、F1を実装し、F1/R36の同時実装は禁止する。D1はVRWM 6 V、VBR 6.67～7.37 V、VC max 10.3 Vの短時間transient対策であり、XC6206のVIN絶対最大7.0 V以下を保証するOVPではない。
 - 外部機器へ給電しない。通常構成の基板消費電流はUSB 2.0未configured時の100 mA未満を合否基準とする。
 - VBUS配線・R36・F1の物理設計上限は0.5 Aとするが、これは通常消費の許容値ではない。電流内訳、U3損失、VBAT寿命は[`../hardware/overall/power_budget.md`](../hardware/overall/power_budget.md)を正とする。
 - CR2032からR47=100 Ohmを介してSTM32のVBATへ接続し、LSEと内蔵RTCにより主電源断中も暦とbackup registerを保持する。充電経路は設けない。
@@ -174,6 +174,7 @@ flowchart LR
 - 通常動作時はUSB CDC ACMを実装し、ログ表示、時刻設定、状態取得、テスト出力制御に使う。
 - 内蔵system bootloaderのUSB DFUでファームウェアを書き込めるよう、BOOT操作とRESET操作を基板上で可能にする。
 - ファームウェア異常時のsource-level debugに備え、SWDIO、SWCLK、NRST、3V3、GNDのテストパッドを残す。
+- PA6には唯一の汎用firmware event traceとしてTP9 `TP_FW_TRACE`を残す。SWOではなくGPIO pulse観測用とし、通常firmwareではanalog/no-pull、明示的なdebug buildまたは設定時だけ既定LowのGPIO出力として有効化する。製品機能はTP9へ依存させない。
 - D+/D-には低容量ESD保護と必要に応じて22 Ohm直列抵抗を置き、差動配線を短く等長にする。
 - SW1 RESETとSW2 BOOTには小型Basic `TS-1088-AR02016` / C720477を使用する。PA15の専用DFU buttonおよび予備test padは設けずNCとし、正常時はUSB CDC command、異常時はBOOT+RESETでDFUへ入る。
 - PA14-BOOT0は100 kOhm pull-down、BOOT switch側は1 kOhm seriesとする。製造時に外部BOOT0を使用するoption byteを設定する。NRSTは10 kOhm pull-up、100 nF to GNDとする。
@@ -185,14 +186,16 @@ flowchart LR
 
 | Ref | 接続先 | 極数 | pin assignment |
 |---|---|---:|---|
-| J1 | USB Type-C | USB2 Type-C | VBUS, GND, D+, D-, CC1, CC2 |
-| J2 | 外部UM982 | 3 | 1:GND, 2:PPS_IN, 3:NMEA_IN |
-| J3 | Jetson Developer Kit | 4 | 1:GND, 2:PPS_OUT, 3:BOARD_TX/JET_RX, 4:BOARD_RX/JET_TX |
-| J4 | VLP-32C | 3 | 1:GND, 2:PPS_OUT, 3:NMEA_INV_OUT |
-| J5 | Mid-360 | 3 | 1:GND, 2:PPS_OUT, 3:NMEA_OUT |
-| J6 | Spresense用レベルシフト基板 | 3 | 1:GND, 2:PPS_3V3_OUT, 3:NMEA_3V3_OUT |
-| J7 | 予備UART 1 | 4 | 1:GND, 2:PPS_OUT, 3:BOARD_TX/AUX_RX, 4:BOARD_RX/AUX_TX |
-| J8 | 予備UART 2 | 4 | 1:GND, 2:PPS_OUT, 3:BOARD_TX/AUX_RX, 4:BOARD_RX/AUX_TX |
+| J1 | USB Type-C | USB2 Type-C | VBUS, GND, `USB_DP_CONN`, `USB_DN_CONN`, CC1, CC2 |
+| J2 | 外部UM982 | 3 | 1:GND, 2:`GNSS_PPS_IN`, 3:`GNSS_NMEA_RX_IN` |
+| J3 | Jetson Developer Kit | 4 | 1:GND, 2:`JETSON_PPS_OUT`, 3:`JETSON_TX_OUT`, 4:`JETSON_RX_IN` |
+| J4 | VLP-32C | 3 | 1:GND, 2:`VLP_PPS_OUT`, 3:`VLP_TX_OUT` |
+| J5 | Mid-360 | 3 | 1:GND, 2:`MID360_PPS_OUT`, 3:`MID360_TX_OUT` |
+| J6 | Spresense IMU用レベルシフト基板 | 3 | 1:GND, 2:`IMU_PPS_OUT`, 3:`IMU_TX_OUT` |
+| J7 | 予備UART 1 | 4 | 1:GND, 2:`AUX1_PPS_OUT`, 3:`AUX1_TX_OUT`, 4:`AUX1_RX_IN` |
+| J8 | 予備UART 2 | 4 | 1:GND, 2:`AUX2_PPS_OUT`, 3:`AUX2_TX_OUT`, 4:`AUX2_RX_IN` |
+
+J2/J3/J7/J8の入力ラベルは直列抵抗よりU4側に置き、コネクタから直列抵抗までの短い区間は無名netとする。USBはU11を境にコネクタ側`USB_DP_CONN`/`USB_DN_CONN`とMCU側`USB_DP`/`USB_DN`へ分割し、保護素子を経由する配線を固定する。
 
 - J3の相手側はJetson header pin 6または9 (GND)、pin 7 (GPIO09/PPS)、pin 8 (UART1_TXD)、pin 10 (UART1_RXD)へ分岐するハーネスとする。
 - Jetson側40-pin headerへ基板を直接搭載せず、GHケーブルだけで接続する。
@@ -207,7 +210,7 @@ flowchart LR
 | Jetson Orin Nano | 1 | 双方向UART 1 | 3.3 V | pin 7 PPS、pin 8/10 UART | 基本仕様確定 |
 | VLP-32C | 1 | 1 | 3.3 V試作出力 | NMEA +1秒、UART反転。High >3.0 V @ 2 mAはJ4実測で合否判定 | 機能・GH互換3 pin確定、電圧は試作検証 |
 | Mid-360 | 1 | 1 | 3.3 V TTL | 9600 8N1、GPRMC/GNRMC | 電気仕様・GH互換3 pin確定 |
-| Spresense用レベルシフト基板 | 1 | 1 | 3.3 V | レベル変換はスコープ外 | 基本仕様確定 |
+| Spresense IMU用レベルシフト基板 | 1 | 1 | 3.3 V | `IMU_*`はCXD5602PWBIMU1J向け系統名。レベル変換はスコープ外 | 基本仕様確定 |
 | 予備UART 1 | 1 | 双方向UART 1 | 3.3 V | 独立TX/RX、給電なし | 確定 |
 | 予備UART 2 | 1 | 双方向UART 1 | 3.3 V | 独立TX/RX、給電なし | 確定 |
 
@@ -253,7 +256,7 @@ clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定し�
 | LSE crystal | SC-32S32.768kHz20PPM7pF | C97604 | 32.768 kHz、CL=7 pF、±20 ppm、SMD3215 | 採用。内蔵RTC/calendar専用。2026-08-12 API価格$0.1886 |
 | USB ESD | USBLC6-2SC6 | C7519 | USB 2.0対応2-line ESD保護 | 採用。D+/D-コネクタ直近へ実装 |
 
-- U2はpin 1/2=GND、pin 3=OUT、pin 4=`+3V3`。U14はpin 1=OUT、2=GND、3=+IN、4=-IN、5=`+3V3`とする。C19 AC結合、R48=33 kOhm/R49=15 kOhm/C20の1.031 V reference、R50 bias、C21 decouplingを実装し、U14 pin 1をR45=33 Ohm経由でPF0へ接続する。U15/`+2V8_CLK`は配置しない。
+- U2はpin 1=NC、pin 2=GND、pin 3=OUT、pin 4=`3V3`。U14はpin 1=OUT、2=GND、3=+IN、4=-IN、5=`3V3`とする。C19 AC結合、R48=33 kOhm/R49=15 kOhm/C20の1.031 V reference、R50 bias、C21 decouplingを実装し、U14 pin 1をR45=33 Ohm経由でPF0へ接続する。U15/`+2V8_CLK`は配置しない。
 - C22434890は通常SMT、C544337はExtended/SMTである。DR-050時点の受動部品とR45を含むclock chainは約$1.8346だったが、DR-053でR48を変更したため現行価格は発注時に再確認する。
 - JLCPCBのBasic/Promotional区分は変動するため、発注用BOM作成時に公式parts libraryで再確認する。
 - STM32G0B1RBT6は[ST製品情報](https://www.st.com/en/microcontrollers-microprocessors/stm32g0b1rb.html)および[JLCPCB C5143679](https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RBT6/C5143679)、U2/U14は[YXC YSO510TP family資料](https://www.yxc.hk/uploadfiles/2023/07/20230710175706329.pdf)と[TI LMV7219資料](https://www.ti.com/lit/ds/symlink/lmv7219.pdf)を参照。選定詳細は[`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)を正とする。
@@ -295,15 +298,15 @@ clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定し�
 | ブロック | 採用品 | 方針 |
 |---|---|---|
 | USB Type-C receptacle | TYPE-C-31-M-12相当、LCSC C165948 | USB 2.0 device、16 pin、CC1/CC2へ各5.1 kOhm Rd |
-| 3.3 V LDO | XC6206P332MR-G、LCSC C5446 | Basic、200 mA、VIN max 6 V、SOT-23-3。外部給電なし、3.3 V rail設計上限100 mA |
+| 3.3 V LDO | XC6206P332MR-G、LCSC C5446 | Basic、200 mA、動作VIN 1.8～6.0 V、VIN絶対最大-0.3～+7.0 V、SOT-23-3。pin 1=VSS、2=VOUT、3=VIN。外部給電なし、3.3 V rail設計上限100 mA |
 | USB ESD | USBLC6-2SC6、LCSC C7519 | D+/D-をコネクタ直近で保護 |
-| VBUS保護 | F1 `MF-NSMF050-2` + R36 `0603WAF0000T5E` / C21189 + D1 `SMF5.0A-T13` | 初回はF1/D1 DNP、R36実装。保護variantはF1実装、R36 DNP。5 V規定USB電源のみ使用 |
+| VBUS保護 | F1 `MF-NSMF050-2` + R36 `0603WAF0000T5E` / C21189 + D1 `SMF6.0A` / C19077499 | 初回はF1 DNP、R36/D1実装。保護variantはF1/D1実装、R36 DNP。D1はPromotionalの単方向TVSでESD・短時間surge用。5 V規定USB電源のみ使用 |
 | RTC backup | CR2032一次電池 + holder + R47 100 Ohm | 充電回路は設けず、R47を介してSTM32 VBATへ接続 |
 
-- MCUのVDD/VDDAとVREF+は`+3V3`へ接続し、VBATだけをCR2032由来の`VBAT_RTC`へ接続する。各電源pin直近へ100 nFを置く。VDDAはパッケージ内部でVDDへ結線されるため専用railは不要であり、旧`+3V3_A` netは廃止する。VREF+は`+3V3`直結とし、VREFBUFは有効化しない。
+- MCUのVDD/VDDAとVREF+は`3V3`へ接続し、VBATだけをCR2032由来の`VBAT_RTC`へ接続する。各電源pin直近へ100 nFを置く。VDDAはパッケージ内部でVDDへ結線されるため専用railは不要であり、旧`+3V3_A` netは廃止する。VREF+は`3V3`直結とし、VREFBUFは有効化しない。
 - VBUS側のbulk容量は10 uFを超えない。USB 2.0はdevice側のVBUS容量を10 uFまでとしており、R36の0 Ohmは突入電流を制限しない。
 - XC6206は設計上限100 mAで(5.0 - 3.3) x 0.1 = 170 mWを消費する。SOT-23-3では温度上昇が無視できないため、初回試作で実消費電流とLDO表面温度を測定する。想定負荷は40 mA級である。
-- USB D+/D-は90 Ohm differentialを目標に、同一層・短距離・連続GND参照で配線する。
+- USB `USB_DP_CONN`/`USB_DN_CONN`および`USB_DP`/`USB_DN`は90 Ohm differentialを目標に、同一層・短距離・連続GND参照で配線する。
 - USB-Cからの給電とUSB通信を同一コネクタで行う。USB host機能、USB PD、外部機器へのVBUS配電は実装しない。
 - SWDテストパッドはUSB CDC/DFUが動作しない状態からの復旧とリアルタイムデバッグ用であり、通常利用時はUSBだけで完結させる。
 
@@ -354,7 +357,7 @@ GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値と�
 - 既存KiCadファイルは空project scaffoldであり、設計の正本として使用しない。
 - UM982アンテナ接続・給電は本基板のスコープ外とする。
 - GNSS追従中のPPS位相差は1 us以内を設計目標とし、実装後の校正・測定で保証可否を判定する。
-- 相手機器側ハーネス、RTC有効性の外部報告形式、取付穴・高さは未確定である。テストパッドはDR-052でTP1～TP8へ確定した。`RTC_VALID/INVALID`の内部判定条件はDR-034、U2/U14採用品番はDR-050で確定済みである。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
+- 相手機器側ハーネス、RTC有効性の外部報告形式、取付穴・高さは未確定である。テストパッドはDR-055でTP1～TP9へ確定し、TP9だけを汎用firmware trace用として残した。`RTC_VALID/INVALID`の内部判定条件はDR-034、U2/U14採用品番はDR-050で確定済みである。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
 - EasyEDAでMCU symbolを配置した直後に、symbol上のpin番号を[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)と1本ずつ突き合わせる。版0.20以前のpin番号表には誤りがあったため、表を信用してsymbol確認を省略しない。
 
 ## 8. 検証・合否条件
@@ -376,3 +379,4 @@ GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値と�
 - holdover中にRMC=`V`を出力し、Mid-360/VLP-32Cのtimestamp追従可否を実機確認する。`A`を偽装しない。
 - GNSSから保持時刻、保持時刻からGNSSへの切替時に短パルス、二重パルス、秒飛びがないこと。
 - 文書化した電源順序で投入/切断し、外部機器OFF中に出力がHigh-Z、基板OFF中に外部入力が駆動されないこと。条件外のback-power試験は保護版検討時に行う。
+- 通常firmwareでPA6がanalog/no-pullであること、debug有効時だけTP9が既定Lowから意図したevent pulseを出力すること。TP9を未接続としても全製品機能が成立すること。
