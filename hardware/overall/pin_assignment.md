@@ -14,12 +14,12 @@
 
 LQFP-64再割当へ適用した確定事項:
 
-- GNSS PPS/NMEA、Jetson/AUX入力5回路はBasicの`74HC14D,653` / `C5605` x1へ集約する。UART入力は各USARTの`RXINV`、PPS入力は反転edge captureを使う。各U4入力nodeには未接続時biasを設ける。
+- GNSS PPS/NMEA、Jetson/AUX入力5回路はTI `SN74LV14ADR` / C475503 x1へ集約する。UART入力は各USARTの`RXINV`、PPS入力は反転edge captureを使う。各U4入力nodeには未接続時biasを設ける。
 - 3.3 V PPS/UART出力の`74LVC125A`はU7/U8/U12の3個とし、J3～J8の全12出力を担当する。U7C/U7DをVLP-32CのPPS/NMEAへ使用する。
 - VLP向け論理反転はUSARTの`TXINV`で行う。旧VLP専用U5/U6 driverと`+4V7_VLP`は使用しない。U2のclipped-sine出力はU14 comparatorで3.3 V CMOS化しPF0へ入力する。専用clock LDOは使用しない。
 - VLP公式条件はHigh >3.0 Vかつ<5.0 V、Low <1.2 V、High時2 mA供給である。3.3 V `74LVC125A`にはこの組合せの直接min保証点がないため、J4を2 mA負荷で実測して試作合否を判定する。
 - GH信号ESD footprintは設けない。通常出力は33 Ohm、VLPの2出力は10 Ohm、HC14入力は4.7 kOhmを初期値とする。
-- USB ESDは実装し、VBUS PTC/TVSはfootprintを残して初回DNPとする。F1と並列のR36 `0603WAF0000T5E` / C21189を実装してVBUSを導通させる。
+- USB ESDとD1 TVSは実装し、F1 PTCは初回DNPとする。F1と並列のR3 `0603WAF0000T5E` / C21189を実装してVBUSを導通させる。
 - DR-002対応として、`PPS_OE_N`はPB1、`IMU_TX_OE_N`はPB2へ割り当てる。PB1/PB2はDS13560 Table 12 note 4の条件付きreset pull-down対象外であり、reset中は外付け100 kOhm pull-upにより74LVC125AをHigh-Zへ固定する。
 - DR-014対応として、生成PPSはPA6/TIM3_CH1ではなく**PC5/TIM2_CH2**から出力する。TIM3は16-bitで48 MHzから高分解能の1 Hzを生成できないため、32-bitのTIM2へ集約する。
 - DR-018対応として、VREF+は`3V3`へ直結し100 nFを付ける。旧`+3V3_A`は廃止する。ADCを使用しないためアナログrailを分離しない。VREF+を外部駆動するのでVREFBUFは有効化しない。
@@ -27,17 +27,18 @@ LQFP-64再割当へ適用した確定事項:
 ## VBUS電源経路
 
 ```text
-J1 VBUS -> VBUS_RAW -> (F1 || R36) -> VBUS_PROTECTED -> U3 / board loads
+J1 VBUS -> VBUS_RAW -> (F1 || R3) -> VBUS_PROTECTED -> U3 / board loads
                                       |
                                       +-> D1 TVS -> GND
 ```
 
-- F1=`MF-NSMF050-2`、R36=`0603WAF0000T5E` / C21189とし、同じ`VBUS_RAW`―`VBUS_PROTECTED`間へ並列接続する。
-- D1は単方向`SMF6.0A` / C19077499とし、pin 1 (K、band側)を`VBUS_PROTECTED`、pin 2 (A)をGNDへ接続する。初回variantからPCBA実装する。ESD・短時間surge用であり、XC6206のVINを絶対最大7.0 V以下に保証するOVPではない。
-- 初回variantはF1=DNP、R36=PCBA実装、D1=PCBA実装とする。
-- 保護variantはF1=実装、R36=DNP、D1=PCBA実装とする。F1とR36を同時実装するとPTCがbypassされるため禁止する。
-- R36は0 Ohm、抵抗50 mOhm未満、0603 jumper定格1 Aで、基板VBUS設計上限0.5 Aを満たす。0.5 A時の最大dropは25 mVとする。
-- U3 `XC6206P332MR-G`のSOT-23 pinはTorex ETR03005-009に従い、1=VSS/GND、2=VOUT/`3V3`、3=VIN/`VBUS_PROTECTED`とする。動作VINは1.8～6.0 V、VIN絶対最大は-0.3～+7.0 Vである。
+- F1=`MF-NSMF050-2`、R3=`0603WAF0000T5E` / C21189とし、同じ`VBUS_RAW`―`VBUS_PROTECTED`間へ並列接続する。R36は`IMU_TX_OE_N`の100 kOhm pull-upである。
+- D1は単方向`SMF6.0A` / C19077499とし、pin 1 (K、band側)を`VBUS_PROTECTED`、pin 2 (A)をGNDへ接続する。初回variantからPCBA実装する。ESD・短時間surge用であり、継続的な過電圧を遮断するOVPではない。
+- U11 `USBLC6-2SC6`はpin 1=`USB_DN_CONN`、2=GND、3=`USB_DP_CONN`、4=`USB_DP`、5=`VBUS_RAW`、6=`USB_DN`とする。ST datasheetの標準pin配置と第2回EasyEDA netlistで照合済みである。
+- 初回variantはF1=DNP、R3=PCBA実装、D1=PCBA実装とする。
+- 保護variantはF1=実装、R3=DNP、D1=PCBA実装とする。F1とR3を同時実装するとPTCがbypassされるため禁止する。
+- R3は0 Ohm、抵抗50 mOhm未満、0603 jumper定格1 Aで、基板VBUS設計上限0.5 Aを満たす。0.5 A時の最大dropは25 mVとする。
+- U3 `TPS70933DBVR` / C89347はpin 1=IN/`VBUS_PROTECTED`、2=GND、3=EN/`VBUS_PROTECTED`、4=NC、5=OUT/`3V3`とする。入力2.7～30 V、3.3 V固定、150 mA連続・200 mA peakで、逆電流保護を内蔵する。EN推奨上限6.5 Vに対しUSB 5 V接続で適合する（DR-059）。
 
 ## MCU割当
 
@@ -46,15 +47,15 @@ J1 VBUS -> VBUS_RAW -> (F1 || R36) -> VBUS_PROTECTED -> U3 / board loads
 | 1 | PC11 | GPIO | `NC_PC11` | 未使用、回路図上NC |
 | 2 | PC12 | GPIO | `NC_PC12` | 未使用、回路図上NC |
 | 3 | PC13 | GPIO | `NC_PC13` | 未使用、回路図上NC。RTC_OUT/TAMPへ割り付けず、配線もLSE loopへ近づけない |
-| 4 | PC14-OSC32_IN | LSE | `LSE_IN` | X1 SC-32S、C22 load capacitor |
-| 5 | PC15-OSC32_OUT | LSE | `LSE_OUT` | X1 SC-32S、C23 load capacitor |
-| 6 | VBAT | Power | `VBAT_RTC` | BT1 CR2032正極からR47=100 Ohm経由。100 nF、充電禁止 |
+| 4 | PC14-OSC32_IN | LSE | `LSE_IN` | X1 SC-32S、C14 load capacitor |
+| 5 | PC15-OSC32_OUT | LSE | `LSE_OUT` | X1 SC-32S、C15 load capacitor |
+| 6 | VBAT | Power | `VBAT_RTC` | BT1 pin 2（CR2032正極）からR4=100 Ohm経由。BT1 pin 1はGND。C8=100 nF、充電禁止（DR-058） |
 | 7 | VREF+ | Power | `3V3` | 100 nF。VDDA >= 2 VのときVREF+は2 V～VDDAの範囲が要求されるため`3V3`直結で適合。VREFBUFは有効化しない |
 | 8 | VDD/VDDA | Power | `3V3` | 本パッケージ唯一のVDD。VDDAは内部でVDDへ結線されるためVDDA専用decouplingは不要。100 nF + bulk |
 | 9 | VSS/VSSA | Power | `GND` | 本パッケージ唯一のVSS |
-| 10 | PF0-OSC_IN | HSE bypass | `CLK_24M` | U14 pin 1 OUTをR45=33 Ohm経由で入力。TCXO/comparator/PLLの正常clock源 |
+| 10 | PF0-OSC_IN | HSE bypass | `CLK_24M` | U14 pin 1 OUTをR8=33 Ohm経由で入力。TCXO/comparator/PLLの正常clock源 |
 | 11 | PF1-OSC_OUT | GPIO | `NC_PF1` | HSE bypass時は未使用、回路図上NC |
-| 12 | PF2-NRST | NRST | `NRST` | reset button/SWD。R42 10 kOhm pull-up、C18 100 nF |
+| 12 | PF2-NRST | NRST | `NRST` | reset button/SWD。R9 10 kOhm pull-up、C16 100 nF |
 | 13 | PC0 | GPIO | `NC_PC0` | 未使用、回路図上NC |
 | 14 | PC1 | GPIO | `NC_PC1` | 未使用、回路図上NC |
 | 15 | PC2 | GPIO | `NC_PC2` | 未使用、回路図上NC |
@@ -162,7 +163,7 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
 | 項目 | 構成 | 備考 |
 |---|---|---|
 | SYSCLK / timer clock源 | 24 MHz TCXO + comparator + HSE bypass + PLL、48 MHz | PLLM=2、PLLN=16、PLLR=4。PF0入力はduty 45～55 %、PF1 NC。Voltage Range 1、Flash 2 wait state |
-| timer clockの周波数基準 | **YXC OW7EL89CENUYO3YLC-24M / C22434890、温度安定度±1.5 ppm** | clipped sineをU14 LMV7219で3.3 V CMOS化し、R45経由でPF0へ入力。C48677994/C51822852/C51966238は採用解除 |
+| timer clockの周波数基準 | **YXC OW7EL89CENUYO3YLC-24M / C22434890、温度安定度±1.5 ppm** | clipped sineをU14 LMV7219で3.3 V CMOS化し、R8経由でPF0へ入力。C48677994/C51822852/C51966238は採用解除 |
 | UTCの絶対基準 | GNSS PPS + 検証済みNMEA | GNSS有効中はDPLLで位相・周波数を規律する |
 | USB clock | PLLQ=48 MHz | PLLM=2、PLLN=16、PLLQ=4。HSI48/CRSを使用しない。0～40 ℃で列挙を確認する |
 | UART baud生成 | TCXO/PLL由来 | 温度安定度±1.5 ppm級。追加BRR補正は不要 |
@@ -248,29 +249,29 @@ J2/J3/J7/J8の外部入力ラベルは直列抵抗よりU4側に置く。コネ�
 
 - VLP-32C公式条件はPPS/NMEAともHigh >3.0 Vかつ<5.0 V、Low <1.2 V、High時2 mA供給である。
 - U7C/U7Dは`3V3`駆動のためHigh上限5.0 V未満とLow条件は満たす。Nexperia 74LVC125AはVCC=3.0 V、IOH=-18 mAでVOH min 2.4 Vを規定するが、3.3 V・2 mAに対するVOH minは表で直接規定していない。このためHigh >3.0 V @ 2 mAは文書上のworst-case保証ではなく試作実測項目とする。
-- J4 pin 2/3を各1.5 kOhmでGNDへ負荷し、R15/R16=10 Ohm後のHighが3.0 Vを超え、Lowが1.2 V未満であることを全試作基板で確認する。規定されていない動作点の補間値は保証根拠に使わず、VLP実機でもPPS/NMEA lockを確認する。
+- J4 pin 2/3を各1.5 kOhmでGNDへ負荷し、R21/R23=10 Ohm後のHighが3.0 Vを超え、Lowが1.2 V未満であることを全試作基板で確認する。規定されていない動作点の補間値は保証根拠に使わず、VLP実機でもPPS/NMEA lockを確認する。
 - 不合格の場合は3.3 V出力を無理に使用せず、次版で専用level driverを再設計する。
 
 ## PPSロジック接続
 
 ```text
-J2 -> R27 -> GNSS_PPS_IN -> U4A 74HC14 -> GNSS_PPS_MON -> MCU PA5 TIM2_CH1 falling-edge capture
+J2 -> R13 -> GNSS_PPS_IN -> U4A SN74LV14A -> GNSS_PPS_MON -> MCU PA5 TIM2_CH1 falling-edge capture
 MCU PC5 TIM2_CH2 PPS_GENERATED -> U7A/U7C/U8A/U8C/U12A/U12C -> J3/J4/J5/J6/J7/J8 PPS
 MCU PB1 PPS_OE_N -> all six PPS channels /OE, 100 kOhm pull-up
 ```
 
 GNSS正常時もPPSを直接pass-throughせず、PC5のTIM2出力比較をGNSS PPSへ規律する。GNSS復帰時は周期を1秒当たり最大±100 usだけ変化させて位相を連続的に戻す。
 
-GNSS PPS経路の固定遅延は、R27（4.7 kOhm）とU4A入力容量および配線容量によるRC、U4Aの伝搬遅延、capture同期遅延の和である。RC分は概算55～82 nsで、U4のしきい値ばらつきによる基板間差は約27 nsとなる。これらは基板ごとの固定offsetとして実測・校正し、DPLLの位相補正値へ含める。0～40 °Cでのドリフトは10 ns級であり、1 us目標に対して支配的ではない。
+GNSS PPS経路の固定遅延は、R13（4.7 kOhm）とU4A入力容量2.3 pFおよび配線/source容量によるRC、U4Aの伝搬遅延、capture同期遅延の和である。旧74HC14を前提にした55～82 ns/27 ns差の概算は使用せず、基板ごとの固定offsetとして実測・校正し、DPLLの位相補正値へ含める。
 
 ### U4外部入力bias
 
-R27～R31の4.7 kOhm直列抵抗よりU4側に、次の100 kOhm biasを配置する。これによりJ2/J3/J7/J8未接続時もSchmitt入力が浮かない。
+R13/R16～R19の4.7 kOhm直列抵抗よりU4側に、次の100 kOhm biasを配置する。これによりJ2/J3/J7/J8未接続時もSchmitt入力が浮かない。
 
 | Reference | U4 channel / signal | Bias | Default状態 |
 |---|---|---|---|
-| R37 | U4A / `GNSS_PPS_IN` | 100 kOhm to GND | PPS inactive Low |
-| R38 | U4B / `GNSS_NMEA_RX_IN` | 100 kOhm to `3V3` | UART idle High |
+| R14 | U4A / `GNSS_PPS_IN` | 100 kOhm to GND | PPS inactive Low |
+| R15 | U4B / `GNSS_NMEA_RX_IN` | 100 kOhm to `3V3` | UART idle High |
 | R39 | U4C / `JETSON_RX_IN` | 100 kOhm to `3V3` | UART idle High |
 | R40 | U4D / `AUX1_RX_IN` | 100 kOhm to `3V3` | UART idle High |
 | R41 | U4E / `AUX2_RX_IN` | 100 kOhm to `3V3` | UART idle High |
@@ -280,67 +281,67 @@ U4F inputは従来どおりGNDへ固定し、outputはNCとする。
 ## NMEAロジック接続
 
 ```text
-J2 -> R28 -> GNSS_NMEA_RX_IN -> U4B 74HC14 -> GNSS_NMEA_RX_MCU -> MCU USART3_RX (RXINV=1)
+J2 -> R16 -> GNSS_NMEA_RX_IN -> U4B SN74LV14A -> GNSS_NMEA_RX_MCU -> MCU USART3_RX (RXINV=1)
 MCU PA2 USART2_TX / JETSON_TX_MCU -> U7B -> J3 JETSON_TX_OUT
-J3 -> R29 -> JETSON_RX_IN -> U4C 74HC14 -> JETSON_RX_MCU -> MCU USART2_RX (RXINV=1)
+J3 -> R17 -> JETSON_RX_IN -> U4C SN74LV14A -> JETSON_RX_MCU -> MCU USART2_RX (RXINV=1)
 MCU USART4_TX (TXINV=1) / VLP_TX_MCU -> U7D 74LVC125A -> J4 VLP_TX_OUT
 MCU PB13 VLP_TX_OE_N -> U7D /OE, 100 kOhm pull-up
 MCU PB0 USART5_TX / MID360_TX_MCU -> U8B -> J5 MID360_TX_OUT
 MCU PA4 USART6_TX / IMU_TX_MCU -> U8D -> J6 IMU_TX_OUT
 MCU PB2 IMU_TX_OE_N -> U8D /OE, 100 kOhm pull-up
 MCU PA9 USART1_TX / AUX1_TX_MCU -> U12B -> J7 AUX1_TX_OUT
-J7 -> R30 -> AUX1_RX_IN -> U4D 74HC14 -> AUX1_RX_MCU -> MCU USART1_RX (RXINV=1)
+J7 -> R18 -> AUX1_RX_IN -> U4D SN74LV14A -> AUX1_RX_MCU -> MCU USART1_RX (RXINV=1)
 MCU PC6 LPUART2_TX / AUX2_TX_MCU -> U12D -> J8 AUX2_TX_OUT
-J8 -> R31 -> AUX2_RX_IN -> U4E 74HC14 -> AUX2_RX_MCU -> MCU LPUART2_RX (RXINV=1)
-U4F 74HC14 input -> GND; output -> NC
+J8 -> R19 -> AUX2_RX_IN -> U4E SN74LV14A -> AUX2_RX_MCU -> MCU LPUART2_RX (RXINV=1)
+U4F SN74LV14A input -> GND; output -> NC
 ```
 
-6系統のTXはすべて別のUART/LPUART peripheralと別のbuffer channelを使う。各bufferの`OE_N`も個別GPIOで制御し、reset中は100 kOhm pull-upでHigh-Zとする。外部出力の直列抵抗は通常33 Ohm、VLP PPS/NMEAのR15/R16だけ10 Ohmとする。HC14外部入力は4.7 kOhm初期値の直列抵抗を経由させる。VLPのUSART TX pinはreset中の外部buffer出力がHigh-Zになるよう`OE_N`で制御する。
+6系統のTXはすべて別のUART/LPUART peripheralと別のbuffer channelを使う。各bufferの`OE_N`も個別GPIOで制御し、R32～R38の100 kOhm pull-upでreset中High-Zとする。外部出力の直列抵抗は通常33 Ohm、VLP PPS/NMEAのR21/R23だけ10 Ohmとする。U4外部入力は4.7 kOhm直列抵抗を経由させる。VLPのUSART TX pinはreset中の外部buffer出力がHigh-Zになるよう`OE_N`で制御する。
 
 ## 試作機の電源順序制約
 
-U4 `74HC14D,653`はIoff非対応であり、4.7 kOhmは入力clamp電流を制限するがback-powerを遮断しない。外部3.3 V Highを基板OFF中に印加した場合、1入力当たり概算0.6 mA以下、5入力合計で概算3 mA以下に制限されるが、3.3 V railやMCUの部分給電状態は機能保証されない。初回試作は追加isolationを実装せず、次を必須運用条件とする。
+U4 `SN74LV14ADR`は`Ioff`に対応し、VCC=0 V時の入力部分給電防止を規定している。ただしコネクタ側機器、出力buffer、MCUを含むシステム全体のhot-plug耐性は未保証であるため、初回試作では次を運用条件とする。
 
 1. J2～J8は全機器の電源OFF中に接続・切断し、hot-plugしない。
 2. 入力を駆動するUM982、Jetson、AUXより先、または同時に本基板へ給電する。本基板だけを先にOFFしない。
 3. 接続先をOFFする前に`PPS_OE_N`と各`*_TX_OE_N`をHighへして全出力をHigh-Zにする。
 4. firmware初期化完了までは全`OE_N`をHighに保ち、接続先の電源ON確認後に必要channelだけenableする。
 
-この条件を守れない用途、hot-plug、量産版では、U4のIoff対応品への変更および接続先power sense/isolationを再検討する。
+この条件を守れない用途、hot-plug、量産版では、接続先power sense/isolationと出力側の部分給電経路を再検討する。
 
 ## TCXO、HSE bypass、LSE接続
 
 ```text
 3V3 -> U2 YXC OW7EL89CENUYO3YLC-24M pin 4 VCC
-GND -> U2 pin 1 / pin 2 GND
-U2 pin 3 clipped-sine OUT -> C19 1 nF -> U14 pin 3 +IN
-3V3 -> R48 33 kOhm -> VREF_CLK -> R49 15 kOhm -> GND
-VREF_CLK -> C20 100 nF -> GND
+U2 pin 1 NC（未接続）; U2 pin 2 -> GND
+U2 pin 3 clipped-sine OUT -> C11 1 nF -> U14 pin 3 +IN
+3V3 -> R5 33 kOhm -> VREF_CLK -> R6 15 kOhm -> GND
+VREF_CLK -> C12 100 nF -> GND
 VREF_CLK -> U14 pin 4 -IN
-VREF_CLK -> R50 10 kOhm -> U14 pin 3 +IN
-3V3 -> U14 pin 5 VCC; U14 pin 2 -> GND; C21 100 nFをpin 5/2直近
-U14 pin 1 push-pull OUT -> R45 33 Ohm -> CLK_24M -> MCU PF0/OSC_IN
+VREF_CLK -> R7 10 kOhm -> U14 pin 3 +IN
+3V3 -> U14 pin 5 VCC; U14 pin 2 -> GND; C13 100 nFをpin 5/2直近
+U14 pin 1 push-pull OUT -> R8 33 Ohm -> CLK_24M -> MCU PF0/OSC_IN
 MCU PF1/OSC_OUT -> NC
 
 MCU PC14/OSC32_IN -- X1 SC-32S 32.768 kHz -- MCU PC15/OSC32_OUT
-PC14 -- C22 10 pF C0G ±5% -- GND
-PC15 -- C23 10 pF C0G ±5% -- GND
-BT1 CR2032+ -> R47 100 Ohm -> VBAT_RTC -> MCU VBAT
-BT1 CR2032- -> GND
+PC14 -- C14 10 pF C0G ±5% -- GND
+PC15 -- C15 10 pF C0G ±5% -- GND
+BT1 pin 2 / CR2032+ -> R4 100 Ohm -> VBAT_RTC -> MCU VBAT
+BT1 pin 1 / CR2032- -> GND
 ```
 
-- U2 pin 4/2直近へ100 nFを置く。U14/C19/C20/C21/R48-R50を実装し、U15および`+2V8_CLK`は作成しない。電源投入後5 ms以上待ってHSE bypass/PLLへ切り替える。
-- X1のCL=7 pFに対し基板寄生を約2 pFと仮定し、C22/C23は10 pFを初期値とする。SC-32SのESR最大70 kOhm、C0 typ 1 pF、CL 7 pFから`gmcrit`は概算0.76 uA/Vとなるため、STM32は`LSEDRV=10`（medium-high、`Gmcritmax` 1.7 uA/V）で使用する。low/medium-lowは不適合、highは過励振を悪化させるため使用しない。
+- U2 pin 4/2直近へC10=100 nFを置く。U14/C11/C12/C13/R5-R8を実装し、U15および`+2V8_CLK`は作成しない。電源投入後5 ms以上待ってHSE bypass/PLLへ切り替える。
+- X1のCL=7 pFに対し基板寄生を約2 pFと仮定し、C14/C15は10 pFを初期値とする。SC-32SのESR最大70 kOhm、C0 typ 1 pF、CL 7 pFから`gmcrit`は概算0.76 uA/Vとなるため、STM32は`LSEDRV=10`（medium-high、`Gmcritmax` 1.7 uA/V）で使用する。low/medium-lowは不適合、highは過励振を悪化させるため使用しない。
 - 試作では8.2～12 pFを調整するとともに、発振loopへ直列抵抗`RADD`を挿入して`Sf = (RADD + ESR) / ESR >= 3`を0 ℃、40 ℃、CR2032単独給電で確認する。1 pF以下のprobeでOSC_IN側`Vpp`を測定し、`DL = ESR x (pi F Ctot)^2 x Vpp^2 / 2 < 0.5 uW`を確認する。過励振時はdriveを下げられないため水晶を変更する。
-- U2 pin 3→C19→U14 pin 3、およびU14 pin 1→R45→PF0はGND plane上を短く配線する。R45はPF0直近、R48-R50/C19-C21はU14直近へ置く。clock配線のtest padは小型・stub最小とする。
-- X1とC22/C23はPC14/PC15直近へ配置し、X1直下および発振loop内に信号配線を通さない。裏面には他のGND planeからギャップで区別したローカルGND planeを置き、最寄りのMCU GNDへ一点接続する。X1/C22/C23の周囲にはGND guard ringを設ける。PC13はNCとし、その配線も近づけない。
+- U2 pin 3→C11→U14 pin 3、およびU14 pin 1→R8→PF0はGND plane上を短く配線する。R8はPF0直近、R5-R7/C11-C13はU14直近へ置く。clock配線のtest padは小型・stub最小とする。
+- X1とC14/C15はPC14/PC15直近へ配置し、X1直下および発振loop内に信号配線を通さない。裏面には他のGND planeからギャップで区別したローカルGND planeを置き、最寄りのMCU GNDへ一点接続する。X1/C14/C15の周囲にはGND guard ringを設ける。PC13はNCとし、その配線も近づけない。
 - U2は24 MHz、clipped sine 0.8 Vp-p min、10 kOhm // 10 pF、-30～85 ℃で±1.5 ppm、2.0 mA maxである。U14は2.7～5 V、push-pull出力、7 mV hysteresis、20 ns max propagation delay品である。両部品のsymbol/padを回路図・PCB・現物で照合し、C22434890/C544337以外へ無断代替しない。C48677994/C51822852/C51966238は使用しない。
 - HSE Clock Security Systemを有効化する。HSE/PLL faultでHSIへ切り替わった場合、時刻出力は継続せず全`OE_N`をHighにして`FAULT_CLOCK`へ遷移する。
 
 ## RESET / BOOT / DFU
 
-- SW1 `RESET`は`NRST`（pin 12）とGND間。R42 10 kOhmで`NRST`を`3V3`へpull-upし、C18 100 nFを`NRST`-GND間へ配置する。
-- SW2 `BOOT`は`3V3`からR44 1 kOhmを介してPA14-BOOT0へ接続する。R43 100 kOhmでPA14-BOOT0をGNDへpull-downする。
+- SW1 `RESET`は`NRST`（pin 12）とGND間。R9 10 kOhmで`NRST`を`3V3`へpull-upし、C16 100 nFを`NRST`-GND間へ配置する。
+- SW2 `BOOT`は`3V3`からR10 1 kOhmを介してPA14-BOOT0へ接続する。R11 100 kOhmでPA14-BOOT0をGNDへpull-downする。
 - SW1/SW2は小型Basic `TS-1088-AR02016` / C720477、SMD 4 x 3 mmを使用する。
 - PA14はSWCLK兼用である。STM32G0B1 errata ES0548 §2.2.8により、debug接続後はprobeを外しただけではBOOT0 sampling状態が戻らない。SWD probeを外し、USBを含む全主電源を切って完全power cycleした後にSW2 + SW1のBOOT操作を行う。
 - option byteを`nBOOT_SEL=0`、`nBOOT1=1`として外部BOOT0とsystem-memory bootを有効化する（AN2606の一般表では`nBOOT_SEL`を`nBOOT0_SEL`と表記）。通常起動はBOOT Low、system-memory USB DFUはSW2を押したままSW1を押して離し、その後SW2を離す。

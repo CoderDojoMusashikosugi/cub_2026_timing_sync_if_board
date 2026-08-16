@@ -8,6 +8,7 @@
 - [`jetson_time_protocol.md`](./jetson_time_protocol.md): Jetson SET/GETのCRC付きframe仕様
 - [`power_budget.md`](./power_budget.md): 3.3 V、TCXO、VBATの電流・損失・合否基準
 - [`bom_preliminary.csv`](./bom_preliminary.csv): 初回試作BOM
+- [`pcb_layout_guidelines.md`](./pcb_layout_guidelines.md): PCBレイアウトの配置・配線ルールと図（[`figures/`](./figures/)）
 - [`harness_pinout.md`](./harness_pinout.md): 基板側pinと試作ハーネス製造情報
 - [`open_issues.md`](./open_issues.md): 未解決事項と設計・製造release条件
 

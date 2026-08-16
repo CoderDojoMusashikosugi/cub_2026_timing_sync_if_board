@@ -10,7 +10,7 @@
 
 ## Clock・内蔵RTC設定
 
-- U2 YXC `OW7EL89CENUYO3YLC-24M` / C22434890のclipped-sine出力をC19でAC結合し、1.031 V biasしたU14 `LMV7219M7X/NOPB` / C544337で3.3 V CMOS化する。電源投入後5 ms以上待ち、R45経由でHSE bypassへ入力する。PLLM=2、PLLN=16、PLLR=4でSYSCLK/TIM2=48 MHz、PLLQ=4でUSB=48 MHzとする。起動時はVoltage Range 1へ設定して`VOSF=0`を確認し、Flash latencyを2 wait stateへ上げてからPLL/SYSCLKを切り替える。HSE CSSを有効化する。C48677994/C51822852/C51966238は使用しない。
+- U2 YXC `OW7EL89CENUYO3YLC-24M` / C22434890のclipped-sine出力をC11でAC結合し、1.031 V biasしたU14 `LMV7219M7X/NOPB` / C544337で3.3 V CMOS化する。電源投入後5 ms以上待ち、R8経由でHSE bypassへ入力する。PLLM=2、PLLN=16、PLLR=4でSYSCLK/TIM2=48 MHz、PLLQ=4でUSB=48 MHzとする。起動時はVoltage Range 1へ設定して`VOSF=0`を確認し、Flash latencyを2 wait stateへ上げてからPLL/SYSCLKを切り替える。HSE CSSを有効化する。C48677994/C51822852/C51966238は使用しない。
 - HSE bypass入力はPF0で24 MHz、3.3 V CMOS、duty 45～55 %を満たすことを試作合否条件とし、条件外の基板は不合格とする。
 - X1 32.768 kHz LSEをSTM32内蔵RTCのclock源とし、CR2032からVBAT domainを保持する。SC-32SのESR最大70 kOhm、C0 typ 1 pF、CL 7 pFから求めた`gmcrit`概算0.76 uA/Vに対し、`LSEDRV=10`（medium-high、`Gmcritmax` 1.7 uA/V）を使用する。LSEはcalendar/backup専用で、powered holdoverのPPS周波数基準には使わない。
 - STM32G0B1 errata ES0548 §2.2.1の回避として`LSECSSON=0`とし、LSE CSSは使用しない。LSE CSSはVBAT mode中に動作しないため、主電源断中のLSE継続を保証する判定にも使用しない。
