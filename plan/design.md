@@ -250,7 +250,7 @@ clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定し�
 
 | 機能 | 採用品 | LCSC | 選定理由 | 状態 |
 |---|---|---|---|---|
-| MCU | STM32G0B1RBT6 | C5143679 | native USB FS、6 USART + 2 LPUART、32-bit TIM2、LQFP-64 | 採用。2026-08-10確認時$2.9679、予約可能2370。**N接尾辞品`STM32G0B1RBT6N`はpin 40/41が非互換なので差し替え禁止** |
+| MCU | **STM32G0B1RCT6** | **C3034735** | native USB FS、6 USART + 2 LPUART、32-bit TIM2、LQFP-64、Flash 256 KB / SRAM 144 KB | **採用（DR-060、2026-09-06）。** 旧`STM32G0B1RBT6` / `C5143679`が在庫0となったため変更。2026-09-06確認時$3.0669、在庫173、予約可能104。**N接尾辞品`STM32G0B1RCT6N`はpin 40/41が非互換なので差し替え禁止** |
 | TCXO | **YXC OW7EL89CENUYO3YLC-24M** | **C22434890** | 24 MHz、clipped sine 0.8 Vp-p min、±1.5 ppm、-30～85 ℃、2.0 mA max、SMD2016-4P | **採用。** 通常SMT、在庫約6,500、$0.87前後。無断代替禁止 |
 | Clock comparator | **TI LMV7219M7X/NOPB** | **C544337** | 2.7～5 V、push-pull、7 mV hysteresis、20 ns max delay、SC-70-5 | **採用。** API確認時在庫911、予約可能907、$0.8965 |
 | LSE crystal | SC-32S32.768kHz20PPM7pF | C97604 | 32.768 kHz、CL=7 pF、±20 ppm、SMD3215 | 採用。内蔵RTC/calendar専用。2026-08-12 API価格$0.1886 |
@@ -259,11 +259,12 @@ clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定し�
 - U2はpin 1=NC、pin 2=GND、pin 3=OUT、pin 4=`3V3`。U14はpin 1=OUT、2=GND、3=+IN、4=-IN、5=`3V3`とする。C11 AC結合、R5=33 kOhm/R6=15 kOhm/C12の1.031 V reference、R7 bias、C13 decouplingを実装し、U14 pin 1をR8=33 Ohm経由でPF0へ接続する。U15/`+2V8_CLK`は配置しない。
 - C22434890は通常SMT、C544337はExtended/SMTである。DR-050時点の受動部品とclock直列Rを含むclock chainは約$1.8346だったが、DR-053/DR-057で定数とRefDesを変更したため現行価格は発注時に再確認する。
 - JLCPCBのBasic/Promotional区分は変動するため、発注用BOM作成時に公式parts libraryで再確認する。
-- STM32G0B1RBT6は[ST製品情報](https://www.st.com/en/microcontrollers-microprocessors/stm32g0b1rb.html)および[JLCPCB C5143679](https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RBT6/C5143679)、U2/U14は[YXC YSO510TP family資料](https://www.yxc.hk/uploadfiles/2023/07/20230710175706329.pdf)と[TI LMV7219資料](https://www.ti.com/lit/ds/symlink/lmv7219.pdf)を参照。選定詳細は[`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)を正とする。
+- STM32G0B1RCT6は[ST製品情報](https://www.st.com/en/microcontrollers-microprocessors/stm32g0b1rc.html)、データシート`STM32G0B1xB/xC/xE` DS13560 Rev 6および[JLCPCB C3034735](https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RCT6/C3034735)、U2/U14は[YXC YSO510TP family資料](https://www.yxc.hk/uploadfiles/2023/07/20230710175706329.pdf)と[TI LMV7219資料](https://www.ti.com/lit/ds/symlink/lmv7219.pdf)を参照。選定詳細は[`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)を正とする。MCUの在庫切れ対応と代替検証は[`../hardware/reviews/mcu_stock_alternative_20260906.md`](../hardware/reviews/mcu_stock_alternative_20260906.md)を正とする。
+- MCUの`_RB` / `_RC` / `_RE`はDS13560 Rev 6 Table 2で同一列にまとめられ、`VDDIO2 pin / VSS pin = No/No`、GPIO 60、USART 6、LPUART 2、USB 1、32-bit timer 1が共通である。差はFlash容量だけ（128 / 256 / 512 KB）でSRAMはいずれも144 KB。LQFP64のpinout図も1枚しかない。EasyEDAのpackageも旧新ともuuid `2afd511af2e94adea785d3da1efd72a1`（`LQFP-64_L10.0-W10.0-P0.50-LS12.0-BL`）で同一実体であり、**PCBのpad・配線・部品配置およびpin割当は変更しない。** firmware側はlinker scriptのFLASH容量と、Flash容量で変わるdual bankの境界・ページ番号（RM0444）だけ確認する。
 
 ### 6.3 MCUピン割当
 
-`STM32G0B1RBT6` LQFP-64へ再割当済みであり、物理pin番号、alternate function、net、connector/buffer接続の正本は[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)とする。旧LQFP-48のpin番号は使用しない。
+`STM32G0B1RCT6` LQFP-64へ再割当済みであり、物理pin番号、alternate function、net、connector/buffer接続の正本は[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)とする。旧LQFP-48のpin番号は使用しない。
 
 2026-08-11のDR-012で、物理pin番号をST CubeMX pin database（`STM32G0B1R(B-C-E)Tx.xml`、`Package="LQFP64"`）へ照合し全面修正した。**版0.20以前のpin番号表は使用してはならない。** GPIO名とAF番号は修正前から正しい。
 

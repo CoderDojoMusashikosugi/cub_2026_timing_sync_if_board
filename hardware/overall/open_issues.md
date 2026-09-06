@@ -1,8 +1,8 @@
 # 未解決事項・リリース条件
 
-- 更新日: 2026-08-15
+- 更新日: 2026-09-06
 - 対象: 初回試作
-- 状態: DR-057で第2回EasyEDA実回路図を正本へ同期し、DR-058でBT1極性を確認、DR-059でU3を逆電流保護付きTPS70933DBVRへ置換してOI-012を解決した。R-013は試作実測待ちであり、残る判断待ちはOI-001/OI-003/OI-014である。
+- 状態: DR-057で第2回EasyEDA実回路図を正本へ同期し、DR-058でBT1極性を確認、DR-059でU3を逆電流保護付きTPS70933DBVRへ置換してOI-012を解決した。**DR-060で在庫切れのMCUを`STM32G0B1RCT6` / `C3034735`へ変更した（pinout・footprintとも同一のためPCB変更なし）。** R-013は試作実測待ちであり、残る判断待ちはOI-001/OI-003/OI-014/OI-015である。
 
 ## 判断待ち
 
@@ -11,6 +11,7 @@
 | OI-001 | J2～J8ハーネスの相手機器側connector/pin、線色、線長 | 基板側pinだけ確定。TBDを推測で埋めない | 試作ハーネス製作前 |
 | OI-003 | 取付穴と最大部品高さ | 外形75 mm x 50 mm。穴は筐体条件取得まで配置しない | PCB外形・配置release前 |
 | OI-014 | U3置換後のEasyEDA成果物・DRC確認 | U3は`TPS70933DBVR` / C89347へ置換済みとの報告を受け、正本文書と予備BOMをDR-059で更新した。一方、`review_20260815_02/materials`の`.epro2`、`.enet`、PDF、BOM、DRCログは旧`TPS7A2433DBVR`のまま。再export後にMPN、C-code、SOT-23-5 pin 1～5、`VBUS_PROTECTED`/`3V3`接続、DRC 0件を照合する | PCB/BOM/CPL release前 |
+| OI-015 | MCU品番変更後のEasyEDA成果物・BOM確認 | DR-060でU1を`STM32G0B1RCT6` / `C3034735`へ変更し、正本文書と予備BOMを更新した。EasyEDA Pro側U1の部品番号差し替えと再exportは未了。package uuidが旧品と同一（`2afd511af2e94adea785d3da1efd72a1`）のためPCB再配線は不要だが、再export後にMPN、C-code、LQFP-64のpin 1～64、pin 40=PD8 / 41=PD9が電源netへ接続されていないこと、DRC 0件を照合する | PCB/BOM/CPL release前 |
 
 ## 解決済み
 
@@ -35,7 +36,7 @@
 - [ ] pin 40=PD8、pin 41=PD9が電源netへ接続されていないことを確認する。`VDDIO2`という名前のpinは本パッケージに存在しない。
 - [ ] pin 3=PC13（NC）、pin 4/5=PC14/PC15（X1 LSE）、pin 10=PF0（`CLK_24M`）、pin 11=PF1（NC）、pin 26=PC5（`PPS_GENERATED`）であることを確認する。
 - [ ] 旧`+3V3_A`を使用せず、VREF+を`3V3`へ直結して100 nFを置く。pin 8は`VDD/VDDA`、pin 9は`VSS/VSSA`が正しい名称であり、VDDA専用decouplingは不要。
-- [ ] BOMのMCU MPNが`STM32G0B1RBT6`（**N接尾辞なし**）であることを確認する。N接尾辞品はpin 40/41が`VSS`/`VDDIO2`で非互換。
+- [ ] BOMのMCU MPNが`STM32G0B1RCT6` / `C3034735`（**N接尾辞なし**）であることを確認する（DR-060で`STM32G0B1RBT6` / `C5143679`から変更）。N接尾辞品はpin 40/41が`VSS`/`VDDIO2`で非互換。GP版の`STM32G0B1RBT6` / `RCT6` / `RET6`は相互にpin互換であり、在庫都合の移動ではpin表・PCBを変更しない。
 - [ ] 解決済みOI-002/OI-004/OI-005/OI-006/OI-007/OI-008/OI-009/OI-010/OI-011/OI-012/OI-013と、未解決OI-014の結果を反映する。
 - [ ] U2=C22434890、U14=C544337、C11/C12/C13、R5/R6/R7/R8を配置し、旧C48677994/C51822852/C51966238およびU15/`+2V8_CLK`を配置しない。
 

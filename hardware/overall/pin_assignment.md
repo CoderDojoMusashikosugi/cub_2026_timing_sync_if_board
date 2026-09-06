@@ -1,10 +1,11 @@
 # MCU・信号割当
 
-- 対象MCU: `STM32G0B1RBT6`、LQFP-64
-- 更新日: 2026-08-15（DR-055のPA6 firmware trace pad、DR-053のclock bias値を反映）
+- 対象MCU: `STM32G0B1RCT6`、LQFP-64（DR-060で旧`STM32G0B1RBT6`から変更。**pin割当は一切変更なし**）
+- 更新日: 2026-09-06（DR-060のMCU品番変更を反映。pin表の内容はDR-055のPA6 firmware trace pad、DR-053のclock bias値のまま変更なし）
 - 状態: 2026-08-11にDR-012として物理pin番号を全面修正した。**旧版のpin 1～32および40～41は実物と不一致であり使用してはならない。** GPIO名とAF番号は旧版のまま正しい
 - 根拠: **ST `STM32G0B1xB/xC/xE` datasheet DS13560 Rev 6 のFigure 8（GP版pinout）およびTable 12（LQFP64-GP列）** で全pin確認済み。補助としてCubeMX pin database `mcu/STM32G0B1R(B-C-E)Tx.xml`、ST生成pinctrlデータ（AF番号）、CMSISヘッダ`stm32g0b1xx.h`（timer bit幅）、KiCad symbol library
-- **品種の固定: 本表は`STM32G0B1RBT6`（GP版、`_RxT`）専用である。** N接尾辞品`STM32G0B1RBT6N`（`_RxTxN`）はpin 40/41が`VSS`/`VDDIO2`で、PD8/PD9が存在しない非互換pinoutである（DS13560 Figure 8、Table 2）。BOMのMPNをN接尾辞なしで固定し、差し替えない。本設計はUCPDを使用しないためGP版で不足はない
+- **品種の固定: 本表はGP版（`_RxT`、N接尾辞なし）専用である。** N接尾辞品`STM32G0B1RCT6N`（`_RxTxN`）はpin 40/41が`VSS`/`VDDIO2`で、PD8/PD9が存在しない非互換pinoutである（DS13560 Figure 8、Table 2）。BOMのMPNをN接尾辞なしで固定し、差し替えない。本設計はUCPDを使用しないためGP版で不足はない
+- **Flash容量違い品との互換: 本表は`STM32G0B1RBT6` / `STM32G0B1RCT6` / `STM32G0B1RET6`（LQFP-64、GP版）で共通に使える。** DS13560 Rev 6 Table 2は`_RB` / `_RC` / `_RE`を同一列にまとめ、`VDDIO2 pin / VSS pin = No/No`、GPIO 60、USART 6、LPUART 2、USB 1、32-bit timer 1を共通としている。LQFP64のpinout図もGP版1枚だけである。差はFlash容量（128 / 256 / 512 KB）のみでSRAMは144 KB共通。在庫都合でこの3品種間を移動してもpin割当・PCBは変更しない（DR-060、[`../reviews/mcu_stock_alternative_20260906.md`](../reviews/mcu_stock_alternative_20260906.md)）
 - 最新レビュー: [`../reviews/pre_easyeda_design_review.md`](../reviews/pre_easyeda_design_review.md)
 - 旧レビュー: [`../reviews/final_design_review.md`](../reviews/final_design_review.md)（pin番号照合の結論はDR-012で覆された）
 

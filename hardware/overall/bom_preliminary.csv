@@ -1,5 +1,5 @@
 Category,References,Qty,Manufacturer Part Number,JLCPCB Part Number,Package,JLCPCB Library,Promotional / Preferred,Stock,Reservable,Checked at (JST),Assembly,Decision / note,JLCPCB detail URL
-MCU,U1,1,STM32G0B1RBT6,C5143679,LQFP-64(10x10),Extended,No,,,2026-08-15,PCBA,"第2回EasyEDA BOM照合済み。N接尾辞品へ差し替え禁止",https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RBT6/C5143679
+MCU,U1,1,STM32G0B1RCT6,C3034735,LQFP-64(10x10),Extended,No,173,104,2026-09-06,PCBA,"DR-060で旧STM32G0B1RBT6/C5143679(在庫0)から変更。pinout・EasyEDA package uuidとも同一でPCB変更不要。Flash 256 KB。N接尾辞品へ差し替え禁止",https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RCT6/C3034735
 24 MHz clipped-sine TCXO,U2,1,OW7EL89CENUYO3YLC-24M,C22434890,SMD2016-4P,Extended,No,,,2026-08-15,PCBA,"24 MHz / 3.3 V。pin 1=NC、2=GND、3=OUT、4=VCC。品番固有仕様書は発注前確認",https://jlcpcb.com/partdetail/C22434890
 3.3 V LDO,U3,1,TPS70933DBVR,C89347,SOT-23-5,Extended,No,,,2026-08-15,PCBA,"DR-059。pin 1=IN、2=GND、3=EN、4=NC、5=OUT。IN/EN=VBUS_PROTECTED、OUT=3V3。逆電流保護内蔵、150 mA連続/200 mA peak、2.7～30 V、3.3 V固定",https://jlcpcb.com/partdetail/TexasInstruments-TPS70933DBVR/C89347
 Hex inverting Schmitt buffer,U4,1,SN74LV14ADR,C475503,SOIC-14,Extended,No,,,2026-08-15,PCBA,"DR-057。74x14標準pinout。3.3 V規定とIoff対応。U4F inputはGND固定",https://jlcpcb.com/partdetail/C475503
