@@ -4,6 +4,10 @@
 #include "test_harness.h"
 #include "ts_nmea.h"
 
+/* UM982の測位後のRMC。緯度経度が分の小数8桁で、規格の80文字を超える（Reference Commands Manual §7.2.11の例、83文字） */
+static const char UM982_RMC[] =
+    "$GNRMC,054733.00,A,4004.73893635,N,11614.19823325,E,0.002,155.1,301221,6.9,W,A,V*4B";
+
 /* bodyは'$'と'*'の間。checksumを計算して"$body*hh"を作る */
 static const char *with_checksum(const char *body)
 {
@@ -101,25 +105,49 @@ static void test_rx_length_limit(void)
     const char *s = NULL;
     size_t len = 0;
     int discards = 0;
-    char line[TS_NMEA_MAX_BODY + 8];
+    char line[TS_NMEA_RX_MAX_BODY + 8];
 
-    /* '$'からchecksum末尾まで80文字ちょうどは受け付ける */
+    /* '$'からchecksum末尾まで120文字ちょうどは受け付ける */
     memset(line, 'A', sizeof(line));
     line[0] = '$';
-    line[TS_NMEA_MAX_BODY] = '\r';
-    line[TS_NMEA_MAX_BODY + 1] = '\n';
-    line[TS_NMEA_MAX_BODY + 2] = '\0';
+    line[TS_NMEA_RX_MAX_BODY] = '\r';
+    line[TS_NMEA_RX_MAX_BODY + 1] = '\n';
+    line[TS_NMEA_RX_MAX_BODY + 2] = '\0';
     ts_nmea_rx_init(&rx);
     CHECK_EQ_INT(push_str(&rx, line, &s, &len, &discards), TS_NMEA_RX_SENTENCE);
-    CHECK_EQ_INT(len, TS_NMEA_MAX_BODY);
+    CHECK_EQ_INT(len, TS_NMEA_RX_MAX_BODY);
 
-    /* 81文字は捨てる */
+    /* 121文字は捨てる */
     memset(line, 'A', sizeof(line));
     line[0] = '$';
-    line[TS_NMEA_MAX_BODY + 1] = '\n';
-    line[TS_NMEA_MAX_BODY + 2] = '\0';
+    line[TS_NMEA_RX_MAX_BODY + 1] = '\n';
+    line[TS_NMEA_RX_MAX_BODY + 2] = '\0';
     CHECK_EQ_INT(push_str(&rx, line, &s, &len, &discards), TS_NMEA_RX_NONE);
     CHECK_EQ_INT(discards, 1);
+}
+
+static void test_rx_um982_rmc(void)
+{
+    ts_nmea_rx_t rx;
+    const char *s = NULL;
+    size_t len = 0;
+    int discards = 0;
+    char line[128];
+    ts_nmea_rmc_t r;
+
+    snprintf(line, sizeof(line), "%s\r\n", UM982_RMC);
+    ts_nmea_rx_init(&rx);
+    CHECK_EQ_INT(push_str(&rx, line, &s, &len, &discards), TS_NMEA_RX_SENTENCE);
+    CHECK_EQ_INT(discards, 0);
+    CHECK_EQ_INT(len, strlen(UM982_RMC));
+    CHECK_EQ_INT(ts_nmea_parse_rmc(s, len, &r), TS_NMEA_OK);
+    CHECK_EQ_STR(r.talker, "GN");
+    CHECK_EQ_INT(r.centisecond, 0);
+    CHECK_EQ_INT(r.status, 'A');
+    CHECK_EQ_STR(r.lat, "4004.73893635");
+    CHECK_EQ_STR(r.lon, "11614.19823325");
+    CHECK_EQ_STR(r.mag_var, "6.9");
+    CHECK_EQ_INT(r.mode, 'A');
 }
 
 /* ---- RMC解析 ---- */
@@ -226,6 +254,31 @@ static void test_build_with_position(void)
     snprintf(expected, sizeof(expected), "%s\r\n", with_checksum(body));
     CHECK_EQ_STR(out, expected);
     CHECK_EQ_INT(n, strlen(expected));
+}
+
+static void test_build_um982_position(void)
+{
+    ts_nmea_rmc_t pos;
+    char out[96];
+    char expected[96];
+
+    CHECK_EQ_INT(parse(UM982_RMC, &pos), TS_NMEA_OK);
+    const ts_nmea_rmc_out_t in = {
+        .talker = "GP", .utc = {2021, 12, 30, 5, 47, 33}, .status = 'A', .position = &pos, .mode = 'A',
+        .frac_digits = 2,
+    };
+    /* 緯度経度は分の小数5桁へ切り捨てて82文字に収める */
+    const size_t n = ts_nmea_build_rmc(out, sizeof(out), &in);
+    snprintf(expected, sizeof(expected), "%s\r\n",
+             with_checksum("GPRMC,054733.00,A,4004.73893,N,11614.19823,E,0.002,155.1,301221,6.9,W,A"));
+    CHECK_EQ_STR(out, expected);
+    CHECK_EQ_INT(n, strlen(expected));
+
+    /* 速度・方位・磁気偏差が長くなっても収まる */
+    strcpy(pos.speed_kn, "999.999");
+    strcpy(pos.course_deg, "359.9");
+    strcpy(pos.mag_var, "10.0");
+    CHECK(ts_nmea_build_rmc(out, sizeof(out), &in) > 0u);
 }
 
 static void test_build_holdover_without_position(void)
@@ -364,11 +417,13 @@ int main(void)
     RUN_TEST(test_verify_errors);
     RUN_TEST(test_rx_assembly);
     RUN_TEST(test_rx_length_limit);
+    RUN_TEST(test_rx_um982_rmc);
     RUN_TEST(test_parse_classic);
     RUN_TEST(test_parse_gnrmc_with_mode);
     RUN_TEST(test_parse_errors);
     RUN_TEST(test_parse_leap_second);
     RUN_TEST(test_build_with_position);
+    RUN_TEST(test_build_um982_position);
     RUN_TEST(test_build_holdover_without_position);
     RUN_TEST(test_build_roundtrip);
     RUN_TEST(test_build_rejects);

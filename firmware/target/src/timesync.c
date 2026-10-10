@@ -113,6 +113,8 @@ static ts_nmea_rmc_t last_fix;     /* 出力RMCの位置fieldの出所（最後�
 static bool last_fix_valid;
 static char last_rmc_status = '-';
 static uint32_t last_rmc_delay_ms;  /* PPSからRMC受信完了まで */
+static bool gnss_debug;             /* consoleの gnss debug on: 受信の様子を逐一出す（GNSS試験用） */
+static uint32_t dbg_ms, dbg_bytes, dbg_errors, dbg_overflow; /* 毎秒の受信量の表示用 */
 
 /* ---- TIM2（ISRと共有） ---- */
 
@@ -755,6 +757,12 @@ static int64_t dpll_freq_q16(void)
     return f;
 }
 
+/* F（count/秒、Q16）をppbへ。48 MHzで1 count/秒 = 1000/48 ppb */
+static int32_t freq_ppb(void)
+{
+    return (int32_t)(dpll_freq_q16() * 1000 / (48 * 65536));
+}
+
 static bool gnss_lost(const gnss_rec_t *r)
 {
     if (r->rmc && r->status == 'V') {
@@ -914,9 +922,102 @@ static void close_rec(void)
     gnss_second(&rec);
 }
 
+/* ---- GNSS受信の逐一表示（gnss debug on） ---- */
+
+static void print_signed(int32_t v);
+
+static const char *nmea_err_name(ts_nmea_err_t e)
+{
+    switch (e) {
+    case TS_NMEA_ERR_FORMAT:
+        return "形式";
+    case TS_NMEA_ERR_CHECKSUM:
+        return "checksum";
+    case TS_NMEA_ERR_FIELD:
+        return "field数・書式";
+    case TS_NMEA_ERR_DATETIME:
+        return "日時";
+    default:
+        return "?";
+    }
+}
+
+/* checksumの合った文を、直前のGNSS PPSからの経過（main loopで処理した時点）と一緒に出す */
+static void debug_sentence(const char *s)
+{
+    const uint32_t now = board_millis();
+
+    if (prev_pps_valid && (uint32_t)(now - prev_pps_ms) < 1500u) {
+        con_printf("gnss PPS+%3" PRIu32 " ms %s\r\n", now - prev_pps_ms, s);
+    } else {
+        con_printf("gnss PPSなし   %s\r\n", s);
+    }
+}
+
+/* cは組立て中の文を捨てる原因になった文字 */
+static void debug_discard(char c)
+{
+    const unsigned char uc = (unsigned char)c;
+
+    if (c == '$') {
+        con_printf("gnss 破棄: 文の途中で次の'$'が来た\r\n");
+    } else if (uc < 0x20u || uc > 0x7Eu) {
+        con_printf("gnss 破棄: 文の途中に制御文字・非ASCII 0x%02X（baud違いか雑音）\r\n", uc);
+    } else {
+        con_printf("gnss 破棄: %u文字を超えた %.*s\r\n", (unsigned)TS_NMEA_RX_MAX_BODY, (int)nmea_rx.len,
+                   nmea_rx.buf);
+    }
+}
+
+static void debug_pps(const gnss_rec_t *r, int32_t interval_dev)
+{
+    con_printf("gnss PPS capture 位相差 ");
+    print_signed(r->err);
+    if (r->interval == 0) {
+        con_printf(" count（最初のPPS、または前のPPSから1.5秒超）\r\n");
+        return;
+    }
+    con_printf(" count、間隔は1秒から ");
+    print_signed(interval_dev);
+    con_printf(" count%s\r\n", r->interval_ok ? "" : "（±100 ppmを超えたので使わない）");
+}
+
+static void debug_rmc(const ts_nmea_rmc_t *r, bool time_ok, bool paired)
+{
+    const char *use;
+
+    if (!time_ok) {
+        use = r->leap_second          ? "うるう秒なので時刻に使わない（P-17）"
+              : r->centisecond != 0u ? "小数秒が.00でないので時刻に使わない（RMCは1 Hzにする）"
+                                      : "日時を変換できないので時刻に使わない";
+    } else if (r->status != 'A') {
+        use = "status Vなので時刻は無効";
+    } else if (paired) {
+        use = "直前のGNSS PPSの時刻とする";
+    } else {
+        use = "990 ms以内のGNSS PPSがないので、PPSなしの秒";
+    }
+    con_printf("gnss RMC %c %02u:%02u:%02u.%02u → %s\r\n", r->status, r->utc.hour, r->utc.minute, r->utc.second,
+               r->centisecond, use);
+}
+
+/* 前回からの受信byte数とUART error。byteが来るのに文にならなければbaud違いを疑う */
+static void debug_rx_counts(uint32_t now)
+{
+    const uint32_t b = rx_bytes, e = rx_errors, o = rx_overflow;
+
+    con_printf("gnss %" PRIu32 " baud%s: 直近1秒に受信 %" PRIu32 " byte、UART error %" PRIu32 "、溢れ %" PRIu32 "\r\n",
+               gnss_baud, gnss_autobaud ? "（自動選択中）" : "", b - dbg_bytes, e - dbg_errors, o - dbg_overflow);
+    dbg_ms = now;
+    dbg_bytes = b;
+    dbg_errors = e;
+    dbg_overflow = o;
+}
+
 static void on_capture_event(const cap_ev_t *e)
 {
     bool next;
+    int32_t interval_dev = 0;
 
     if (rec_open) {
         close_rec();
@@ -931,6 +1032,10 @@ static void on_capture_event(const cap_ev_t *e)
         rec.interval = (int64_t)(e->abs - prev_pps_abs);
         const int64_t m = NOM + dpll_freq_q16() / 65536;
         rec.interval_ok = rec.interval >= m - INTERVAL_TOL && rec.interval <= m + INTERVAL_TOL;
+        interval_dev = (int32_t)(rec.interval - m);
+    }
+    if (gnss_debug) {
+        debug_pps(&rec, interval_dev);
     }
     prev_pps_abs = e->abs;
     prev_pps_ms = e->ms;
@@ -955,9 +1060,12 @@ static void on_rmc(const ts_nmea_rmc_t *rmc)
     if (prev_pps_valid) {
         last_rmc_delay_ms = now - prev_pps_ms; /* 対応付けに失敗しているときの診断にも使う */
     }
-    if (rec_open && rec.pps && !rec.rmc && (uint32_t)(now - rec.pps_ms) <= RMC_MAX_DELAY_MS) {
-        /* 直前のPPSの時刻としてまとめる */
-    } else {
+    /* 990 ms以内に来たRMCは、直前のPPSの時刻としてまとめる */
+    const bool paired = rec_open && rec.pps && !rec.rmc && (uint32_t)(now - rec.pps_ms) <= RMC_MAX_DELAY_MS;
+    if (gnss_debug) {
+        debug_rmc(rmc, time_ok, paired);
+    }
+    if (!paired) {
         if (rec_open) {
             close_rec();
         }
@@ -972,7 +1080,7 @@ static void on_rmc(const ts_nmea_rmc_t *rmc)
 
 static void gnss_poll(void)
 {
-    const uint32_t now = board_millis();
+    uint32_t now = board_millis();
 
     /* 受信byteをNMEAへ組み立てる */
     while (rx_tail != rx_head) {
@@ -983,19 +1091,41 @@ static void gnss_poll(void)
         const ts_nmea_rx_status_t st = ts_nmea_rx_push(&nmea_rx, c, &s, &len);
         if (st == TS_NMEA_RX_DISCARDED) {
             nmea_discarded++;
+            if (gnss_debug) {
+                debug_discard(c);
+            }
         } else if (st == TS_NMEA_RX_SENTENCE) {
-            if (ts_nmea_verify(s, len, NULL) != TS_NMEA_OK) {
+            const ts_nmea_err_t verr = ts_nmea_verify(s, len, NULL);
+            if (verr != TS_NMEA_OK) {
                 nmea_bad_checksum++;
+                if (gnss_debug) {
+                    con_printf("gnss %s異常: %s\r\n", nmea_err_name(verr), s);
+                }
                 continue;
             }
             nmea_good++;
             have_good_sentence = true;
             last_good_sentence_ms = now;
+            if (gnss_debug) {
+                debug_sentence(s);
+            }
             ts_nmea_rmc_t rmc;
-            if (ts_nmea_parse_rmc(s, len, &rmc) == TS_NMEA_OK) {
+            const ts_nmea_err_t perr = ts_nmea_parse_rmc(s, len, &rmc);
+            if (perr == TS_NMEA_OK) {
                 on_rmc(&rmc);
+            } else if (perr != TS_NMEA_ERR_NOT_RMC && gnss_debug) {
+                /* 時刻を得る前のUM982は、時刻・日付が空のRMC（$GNRMC,,V,...）を出す */
+                if (perr == TS_NMEA_ERR_FIELD && len > 7u && s[6] == ',' && s[7] == ',') {
+                    con_printf("gnss RMCの時刻が空（GNSSがまだ時刻を得ていない）\r\n");
+                } else {
+                    con_printf("gnss RMCとして読めない（%s）\r\n", nmea_err_name(perr));
+                }
             }
         }
+    }
+
+    if (gnss_debug && (uint32_t)(now - dbg_ms) >= 1000u) {
+        debug_rx_counts(now);
     }
 
     /* baud自動選択: 有効なNMEAが3秒来なければ次のbaudへ */
@@ -1004,11 +1134,20 @@ static void gnss_poll(void)
         if ((uint32_t)(now - ref) > GNSS_AUTOBAUD_MS) {
             gnss_baud_idx = (gnss_baud_idx + 1u) % (sizeof(gnss_bauds) / sizeof(gnss_bauds[0]));
             have_good_sentence = false;
+            if (gnss_debug) {
+                con_printf("gnss baud %" PRIu32 " → %" PRIu32 "（有効なNMEAが3秒来ない）\r\n", gnss_baud,
+                           gnss_bauds[gnss_baud_idx]);
+            }
             gnss_set_baud(gnss_bauds[gnss_baud_idx]);
         }
     }
 
-    /* PPSの後RMCが来ない、またはGNSSから何も来ない秒も1秒として数える */
+    /*
+     * PPSの後RMCが来ない、またはGNSSから何も来ない秒も1秒として数える。
+     * 上でRMCを処理するとlast_rec_msが冒頭のnowより新しくなり、差が負（uint32で巨大）になって
+     * 空の秒を誤って数えるので、時刻を取り直す
+     */
+    now = board_millis();
     if (rec_open && (uint32_t)(now - rec.pps_ms) > RMC_MAX_DELAY_MS) {
         close_rec();
     } else if (!rec_open && (uint32_t)(now - last_rec_ms) > GNSS_SILENT_MS) {
@@ -1261,8 +1400,7 @@ static void rtc_poll(void)
         if ((uint32_t)(now - rtc_last_cal_ms) > RTC_CAL_INTERVAL_MS && lse_vs_tcxo_ppb(&lse_ppb)) {
             rtc_last_cal_ms = now;
             /* LSEの真の偏差 = TCXO基準で測った偏差 + TCXO自身の偏差（GNSSで求めたF） */
-            const int32_t tcxo_ppb = (int32_t)(dpll_freq_q16() * 1000 / 65536 * 1000 / 48);
-            if (rtck_set_calibration(lse_ppb + tcxo_ppb)) {
+            if (rtck_set_calibration(lse_ppb + freq_ppb())) {
                 rtc_commit(ours); /* CALRはconfiguration CRCの対象 */
                 rtc_note = "smooth calibrationを更新";
             }
@@ -1418,12 +1556,6 @@ static const char *state_name(uint8_t s)
     return s < sizeof(names) / sizeof(names[0]) ? names[s] : "?";
 }
 
-/* F（count/秒、Q16）をppbへ */
-static int32_t freq_ppb(void)
-{
-    return (int32_t)(dpll_freq_q16() * 1000 / 65536 * 1000 / 48);
-}
-
 static void print_utc(int64_t unix_sec)
 {
     ts_datetime_t dt;
@@ -1567,6 +1699,14 @@ void timesync_cmd_gnss(const char *arg)
     } else if (strcmp(arg, "auto") == 0) {
         gnss_autobaud = true;
         gnss_set_baud(gnss_bauds[gnss_baud_idx]);
+    } else if (strcmp(arg, "debug on") == 0) {
+        gnss_debug = true;
+        dbg_ms = board_millis();
+        dbg_bytes = rx_bytes;
+        dbg_errors = rx_errors;
+        dbg_overflow = rx_overflow;
+    } else if (strcmp(arg, "debug off") == 0) {
+        gnss_debug = false;
     }
     con_printf("baud       %" PRIu32 "（%s）\r\n", gnss_baud, gnss_autobaud ? "自動選択" : "固定");
     con_printf("受信       %" PRIu32 " byte、UART error %" PRIu32 "、溢れ %" PRIu32 "\r\n", rx_bytes, rx_errors,
@@ -1581,7 +1721,8 @@ void timesync_cmd_gnss(const char *arg)
         con_printf("位置       %s,%c %s,%c\r\n", last_fix.lat, last_fix.lat_hemi ? last_fix.lat_hemi : '-',
                    last_fix.lon, last_fix.lon_hemi ? last_fix.lon_hemi : '-');
     }
-    con_printf("usage: gnss [baud <n> | auto]\r\n");
+    con_printf("debug      %s（受信の逐一表示）\r\n", gnss_debug ? "on" : "off");
+    con_printf("usage: gnss [baud <n> | auto | debug on | debug off]\r\n");
 }
 
 void timesync_cmd_out(const char *arg)

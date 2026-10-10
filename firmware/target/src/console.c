@@ -125,10 +125,16 @@ static const char *clock_status_name(board_clock_status_t s)
     return "?";
 }
 
+/* con_printfのbuffer（192 byte）を超える固定文字列は、切れないようそのまま送る */
+static void con_puts(const char *s)
+{
+    console_write(s, strlen(s));
+}
+
 static void cmd_help(const char *arg)
 {
     (void)arg;
-    con_printf("commands:\r\n"
+    con_puts("commands:\r\n"
                "  id     MCU ID、UID、build、reset要因\r\n"
                "  clk    clock状態\r\n"
                "  regs   初期化registerの監査（test_plan CK-01等）\r\n"
@@ -141,10 +147,11 @@ static void cmd_help(const char *arg)
                "  dfu    system bootloader（USB DFU）へ移る\r\n"
                "  reset  software reset\r\n");
 #ifdef FW_APP
-    con_printf("  status 時刻同期の状態（state、UTC、出力、DPLL、各TXの送信数）\r\n"
-               "  gnss   GNSS受信（baud、NMEA、PPS→RMCの遅れ、位置）。gnss baud <n> / gnss auto\r\n"
-               "  out    出力のenable状態。out on / out off / out mask <hex>（bit0=J3…bit5=J8）\r\n"
-               "  reinit FAULTなどからINIT_INVALIDへ戻す（全出力High-Z）\r\n");
+    con_puts("  status 時刻同期の状態（state、UTC、出力、DPLL、各TXの送信数）\r\n"
+             "  gnss   GNSS受信（baud、NMEA、PPS→RMCの遅れ、位置）。gnss baud <n> / gnss auto\r\n"
+             "         gnss debug on / off: 受信した文、PPS、RMCの扱い、毎秒の受信量を逐一表示\r\n"
+             "  out    出力のenable状態。out on / out off / out mask <hex>（bit0=J3…bit5=J8）\r\n"
+             "  reinit FAULTなどからINIT_INVALIDへ戻す（全出力High-Z）\r\n");
 #endif
 }
 

@@ -91,10 +91,10 @@ DR-061で決めた項目:
 | P-01 | GNSS PPS間隔の許容は1秒±100 ppm。`GNSS_LOCKED`中は100 usより離れたPPSを欠落とみなす |
 | P-04 | 位相差1 us以内が5秒続いたら`RESYNC`→`GNSS_LOCKED` |
 | P-06 | PPS経路の固定offsetは全基板共通の6 count（125 ns、J3→J2折返しの実測）。基板ごとの保存はしない |
-| P-07 | J2の受信baudは115200から自動選択（9600～921600）。RMCはGP/GNどちらも受ける。RMCは直前のGNSS PPS（990 ms以内）の時刻として扱う |
-| P-08 | 全channel GPRMC、9600 baud、8N1。時刻の小数部はVLP（J4）だけなし、他は2桁 |
+| P-07 | J2の受信baudは115200から自動選択（9600～921600）。RMCはGP/GNどちらも受ける。RMCは直前のGNSS PPS（990 ms以内）の時刻として扱う。受信は'$'からchecksumまで120文字まで受け付ける（UM982は緯度経度を分の小数8桁で出すため、測位後のRMCが規格の80文字を超えて83文字前後になる） |
+| P-08 | 全channel GPRMC、9600 baud、8N1。時刻の小数部はVLP（J4）だけなし、他は2桁。緯度経度は分の小数5桁に切り捨て、82文字以内に収める |
 | P-09 | holdover・`RESYNC`中はstatus `V`、mode `N`、位置fieldは空欄 |
-| P-10 | 全channel、PPS立上りの200 ms後に送り始める |
+| P-10 | 全channel、PPS立上りの200 ms後に送り始める。出力のenable・High-Zの切替はどちらも150 ms（PPSがLow、NMEA送信前）で行い、High-Zは最大約1.15秒遅れる。High-Zを決めた後はNMEAを送らない。enableした秒はその秒境界のPPSが出ていないので、J4（次のPPSの時刻）だけ送る |
 | P-12 | `FAULT`からは`FORCE_SET_TIME`、`SET_TIME`、consoleの`reinit`で抜ける。同じsequenceで内容が違うrequestは新しいrequestとして扱う |
 | P-15 | console（interface 0）に`status`、`gnss`、`out`、`reinit`を加えた |
 | P-16 | LED: `GNSS_LOCKED`はPPSに合わせ100 ms、holdover系は2回点滅、`FAULT`は速い点滅、時刻なしは短く1回 |

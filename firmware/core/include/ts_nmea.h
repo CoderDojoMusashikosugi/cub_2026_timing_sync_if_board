@@ -13,12 +13,19 @@
 
 #include "ts_time.h"
 
-/* '$'からCRLFまでの最大長（NMEA 0183） */
+/* '$'からCRLFまでの最大長（NMEA 0183）。生成する文はこれに収める */
 #define TS_NMEA_MAX_SENTENCE 82u
 /* '$'からchecksum末尾まで（CRLFを除く） */
 #define TS_NMEA_MAX_BODY (TS_NMEA_MAX_SENTENCE - 2u)
+/*
+ * 受信で受け付ける'$'からchecksum末尾までの最大長。UM982は緯度経度を分の小数8桁で出すので、
+ * 測位後のRMCが規格の80文字を超える（Reference Commands Manual §7.2.11の例は83文字）
+ */
+#define TS_NMEA_RX_MAX_BODY 120u
 /* RMCの位置・速度などを生の文字列で保持するときの最大長 */
 #define TS_NMEA_FIELD_MAX 15u
+/* 生成するRMCの緯度経度に残す、分の小数の桁数。超える桁は切り捨てる（1e-5分は約2 cm） */
+#define TS_NMEA_OUT_COORD_FRAC 5u
 
 /* ---- 受信組立て ---- */
 
@@ -29,7 +36,7 @@ typedef enum {
 } ts_nmea_rx_status_t;
 
 typedef struct {
-    char buf[TS_NMEA_MAX_BODY + 1u];
+    char buf[TS_NMEA_RX_MAX_BODY + 1u];
     uint8_t len;
     bool in_sentence;
 } ts_nmea_rx_t;
@@ -98,6 +105,7 @@ typedef struct {
 
 /*
  * RMCを生成する。CRLFとNUL終端を付け、CRLF込みの長さを返す。
+ * 緯度経度は分の小数TS_NMEA_OUT_COORD_FRAC桁までに切り捨てる（UM982の8桁のままでは82文字を超える）。
  * 82文字を超える場合、capが足りない場合、入力が不正な場合は0を返す。
  */
 size_t ts_nmea_build_rmc(char *out, size_t cap, const ts_nmea_rmc_out_t *in);

@@ -43,7 +43,7 @@ ts_nmea_rx_status_t ts_nmea_rx_push(ts_nmea_rx_t *rx, char c, const char **sente
         *len = rx->len;
         return TS_NMEA_RX_SENTENCE;
     }
-    if (uc < 0x20u || uc > 0x7Eu || rx->len >= TS_NMEA_MAX_BODY) {
+    if (uc < 0x20u || uc > 0x7Eu || rx->len >= TS_NMEA_RX_MAX_BODY) {
         rx->in_sentence = false;
         return TS_NMEA_RX_DISCARDED;
     }
@@ -299,6 +299,20 @@ static void put_opt_char(sbuf_t *b, char c)
     }
 }
 
+/* 緯度経度を、小数点以下TS_NMEA_OUT_COORD_FRAC桁までで切り捨てて書く */
+static void put_coord(sbuf_t *b, const char *s)
+{
+    const char *dot = strchr(s, '.');
+    size_t n = strlen(s);
+
+    if (dot != NULL && n - (size_t)(dot - s) - 1u > TS_NMEA_OUT_COORD_FRAC) {
+        n = (size_t)(dot - s) + 1u + TS_NMEA_OUT_COORD_FRAC;
+    }
+    for (size_t i = 0; i < n; i++) {
+        put_char(b, s[i]);
+    }
+}
+
 size_t ts_nmea_build_rmc(char *out, size_t cap, const ts_nmea_rmc_out_t *in)
 {
     static const char hex[] = "0123456789ABCDEF";
@@ -328,11 +342,11 @@ size_t ts_nmea_build_rmc(char *out, size_t cap, const ts_nmea_rmc_out_t *in)
     put_char(&b, in->status);
     put_char(&b, ',');
     if (pos != NULL) {
-        put_str(&b, pos->lat);
+        put_coord(&b, pos->lat);
         put_char(&b, ',');
         put_opt_char(&b, pos->lat_hemi);
         put_char(&b, ',');
-        put_str(&b, pos->lon);
+        put_coord(&b, pos->lon);
         put_char(&b, ',');
         put_opt_char(&b, pos->lon_hemi);
         put_char(&b, ',');

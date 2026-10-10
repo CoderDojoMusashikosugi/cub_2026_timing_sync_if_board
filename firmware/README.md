@@ -8,7 +8,7 @@ U1 `STM32G0B1RCT6`で動作するfirmware。試験計画は[`test_plan.md`](./te
 |---|---|
 | [`core/`](./core/) | HAL/register非依存のロジック。hostでもtargetでも同じsourceをbuildする |
 | [`tests/host/`](./tests/host/) | L1 host単体試験（test_plan.md §5.1 UT） |
-| [`target/`](./target/) | STM32固有のstartup、linker script、clock/GPIO初期化、USB CDC console。現在はbring-up firmware |
+| [`target/`](./target/) | STM32固有のstartup、linker script、clock/GPIO初期化、USB CDC console。bring-up、selftest、製品firmware（app）の3つのimageをbuildする |
 | [`third_party/`](./third_party/) | 外部source（CMSIS、TinyUSBの必要部分だけ） |
 | [`tools/`](./tools/) | 試験の実行、書込み、console操作のscript |
 
@@ -32,12 +32,13 @@ consoleのcommand: `help`、`id`（DEV_ID/REV_ID/UID/reset要因）、`clk`、`r
 - GNSSがない場所では、`jetson_time.py set`でPC/Jetsonの時計から時刻を与えると、holdover（RMC=`V`）で出力を始める
 - 時刻は内蔵RTC（LSE）にも書き、CR2032があれば電源OFF中も保持する。起動時にbackup domainを検証し（signature、CRC、RTC設定、calendar範囲、SSRの進み）、合格すればRTCの秒境界へ生成PPSを揃え、RTCの秒が2回続けて一致してからholdover（RMC=`V`）で出力を始める。不合格ならBDRSTして時刻なしで起動する。software reset・DFU書込みでは電源が切れないので電池なしでも保持される
 
-consoleのcommand（bring-upのcommandに加えて）: `status`（state、UTC、出力、DPLL、各TXの送信数、最後に送ったRMC）、`gnss`（受信baud、NMEA数、PPS→RMCの遅れ、位置。`gnss baud 115200`で固定、`gnss auto`で自動）、`out`（`out off`で全出力High-Z、`out on`で戻す、`out mask 3F`でTXを選ぶ）、`reinit`（`FAULT`などから`INIT_INVALID`へ戻す）。毎秒のlogは状態、UTC、GNSS PPSの位相差（count、1 count=20.8 ns）、RMC status、TCXO偏差の推定を出す。
+consoleのcommand（bring-upのcommandに加えて）: `status`（state、UTC、出力、DPLL、各TXの送信数、最後に送ったRMC）、`gnss`（受信baud、NMEA数、PPS→RMCの遅れ、位置。`gnss baud 115200`で固定、`gnss auto`で自動。`gnss debug on`で、checksumの合った文を直前のGNSS PPSからの経過付きで、GNSS PPSの位相差と間隔、各RMCを時刻に使ったかとその理由、捨てた文とその理由、baudの切替、毎秒の受信byte数とUART errorを逐一出す。`gnss debug off`で止める。試験用で、hostが読まないと1行ごとに最大5 ms待つ）、`out`（`out off`で全出力High-Z、`out on`で戻す、`out mask 3F`でTXを選ぶ）、`reinit`（`FAULT`などから`INIT_INVALID`へ戻す）。毎秒のlogは状態、UTC、GNSS PPSの位相差（count、1 count=20.8 ns）、RMC status、TCXO偏差の推定を出す。
 
 ```sh
 py -3 -X utf8 firmware/tools/fwctl.py flash firmware/build/target/app.hex
 py -3 -X utf8 firmware/tools/fwctl.py cmd status gnss
 py -3 -X utf8 firmware/tools/jetson_time.py watch     # Jetson protocolで毎秒GET_STATUS
+py -3 -X utf8 firmware/tools/gnss_watch.py            # GNSS受信試験: 毎秒logを記録し、lockまでの経過と位相差を表示
 ```
 
 ### selftest image（test build）
