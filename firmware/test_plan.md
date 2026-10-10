@@ -103,6 +103,7 @@ DR-061で決めた項目:
 
 - backup registerは5本（TAMP_BKP0R～BKP4R）しかないので、signature/version/flags、検証済みTCXO補正値、最後の同期時刻、application CRC、configuration CRCだけを置く。**Jetsonの`last source_id`/`last sequence`は電源の入れ直しで0に戻る（JP-10の一部を満たさない）**
 - RTCのcalendarは、GNSS lock時、Jetson SETの適用後、RTCの秒が生成PPSの秒と違うとき、RTCの秒境界が生成PPSから5 ms以上ずれたときに書き直す。INIT解除は生成PPSの秒境界でTIM2割込みから行う
+- `TAMP_CR1`のITAMP4E（HSE monitoring）は起動ごとに0にする。初期値のままだと電源断のたびにHSE CSSがbackup registerを消す（2026-10-10、UID …000E0038で実測）
 - smooth calibration（CALR）は、`GNSS_LOCKED`中にLSEの測定が300秒たまってから、LSEの偏差（TCXO基準の測定＋GNSSで求めたTCXO偏差）で決める
 - LSEが動いていない（RTC_INVALID）ときのJetson SETは、RTCへ書かずに時刻だけ使い、ACKを返す
 - Jetson SET（step）のACKは、時刻の適用とcalendarの書込み・読み返し・backup commitの後に返す（約7秒）
@@ -243,7 +244,7 @@ L1（UT）はP1と並行して始め、P3開始までに全項目を合格させ
 
 | ID | 項目 | 方法 | 合否基準（出典） | 対象 |
 |---|---|---|---|---|
-| CK-01 | clock設定のregister監査 | 初期化後にSWDまたはH-01で読む: VOS=Range 1、`VOSF=0`、`FLASH_ACR` LATENCY=2、HSEBYP/HSEON/CSSON、PLLM=2/PLLN=16/PLLR=4/PLLQ=4、SYSCLK=PLL、USB clock=PLLQ、HSI48/CRS未使用、VREFBUF無効、`PVM_VDDIO2=110`、UCPD strobe実施、`RCC_BDCR`のLSEDRV=10・LSECSSON=0・RTCSEL=LSE | 全項目一致（firmware_requirements「起動順序」「Clock・USB」「RTC・backup domain」、pin_assignment「firmware初期化の必須項目」） | 全数 |
+| CK-01 | clock設定のregister監査 | 初期化後にSWDまたはH-01で読む: VOS=Range 1、`VOSF=0`、`FLASH_ACR` LATENCY=2、HSEBYP/HSEON/CSSON、PLLM=2/PLLN=16/PLLR=4/PLLQ=4、SYSCLK=PLL、USB clock=PLLQ、HSI48/CRS未使用、VREFBUF無効、`PVM_VDDIO2=110`、UCPD strobe実施、`RCC_BDCR`のLSEDRV=10・LSECSSON=0・RTCSEL=LSE、`TAMP_CR1`のITAMP4E=0 | 全項目一致（firmware_requirements「起動順序」「Clock・USB」「RTC・backup domain」、pin_assignment「firmware初期化の必須項目」） | 全数 |
 | CK-02 | 初期化の順序 | debug buildでclock切替の各段階にTP9 pulseを出し、`3V3`立上りと同時にscopeで観測する。Flash wait state→SYSCLK切替の順序はcode reviewでも確認する | `3V3`立上りからHSE切替まで5 ms以上。VOS→`VOSF`確認→Flash 2 WS→PLL切替の順序（firmware_requirements） | 代表 |
 | CK-03 | TCXO・comparator・PF0の波形 | U2 pin 3振幅、U14入力common-mode、PF0の周波数・振幅・duty・jitter | U2 pin 3 ≥ 0.8 Vp-p（U2仕様）、PF0 24 MHz、duty 45～55 %。0/40 ℃はEN-01で実施（design §8） | 全数（25 ℃） |
 | CK-04 | TCXO自走偏差 | H-05でDPLLを止め、GNSS PPSに対するTP6 PPSの位相driftを1000秒以上測り、ppmへ換算する | 記録する（基板別の初期偏差。DPLLのcapture range検討とP-01に使う） | 全数 |

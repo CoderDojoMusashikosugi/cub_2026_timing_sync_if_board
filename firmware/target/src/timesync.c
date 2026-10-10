@@ -1465,6 +1465,13 @@ void timesync_cmd_status(const char *arg)
             con_printf(" 起動時のcalendar ");
             print_utc(b->boot_unix);
         }
+        con_printf("\r\n           検証前 TAMP_SR=0x%08" PRIX32 " TAMP_CR1=0x%08" PRIX32 " calendar ", b->tamp_sr,
+                   b->tamp_cr1);
+        if (b->pre_calendar) {
+            print_utc(b->pre_unix);
+        } else {
+            con_printf("読めず");
+        }
         con_printf("\r\n           ");
         if (rtck_read(&rtc_now, &sub)) {
             con_printf("今 ");

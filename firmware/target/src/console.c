@@ -271,6 +271,10 @@ static void cmd_regs(const char *arg)
          TIM_CCER_CC1E | TIM_CCER_CC1P | TIM_CCER_CC2E},
         {"PC5 AF2 (TIM2_CH2)", GPIOC->AFR[0], GPIO_AFRL_AFSEL5_Msk, 2u << GPIO_AFRL_AFSEL5_Pos},
         {"PA5 AF2 (TIM2_CH1)", GPIOA->AFR[0], GPIO_AFRL_AFSEL5_Msk, 2u << GPIO_AFRL_AFSEL5_Pos},
+#ifdef FW_APP
+        /* HSE CSSでbackup registerを消させない（rtc_keep.c） */
+        {"TAMP_CR1.ITAMP4E=0", TAMP->CR1, TAMP_CR1_ITAMP4E, 0u},
+#endif
     };
     unsigned ng = 0;
 

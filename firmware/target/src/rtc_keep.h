@@ -27,6 +27,11 @@ typedef struct {
     int32_t freq_q16;
     uint32_t sync_unix;
     int64_t boot_unix;     /* 起動時のcalendar */
+    /* 検証前の観測値（BDRSTで消える前に取る） */
+    uint32_t tamp_sr;      /* TAMP_SR（ITAMP4F=HSE monitoringのtamperなど） */
+    uint32_t tamp_cr1;     /* TAMP_CR1 */
+    bool pre_calendar;     /* 検証前にcalendarを読めた */
+    int64_t pre_unix;      /* 検証前のcalendar */
 } rtck_boot_t;
 
 /* board_lse_start()より前に呼ぶ。検証し、不合格ならBDRSTする */

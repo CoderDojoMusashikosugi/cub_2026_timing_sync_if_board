@@ -24,6 +24,7 @@
 ## RTC・backup domain
 
 - LSEDRV=10、LSECSSON=0。PC13へTAMP/RTC_OUTを割り当てない
+- `TAMP_CR1`のITAMP4E（HSE monitoring）を0にする。初期値（`0xFFFF0000`）ではHSE CSSの検出がbackup registerを消し、USB電源を切るたびにMCUより先にTCXOが止まって時刻を失う（2026-10-10実測）。BDRSTで初期値へ戻るため起動ごとに書く
 - INIT modeを抜けた後に再度INITへ入る場合、`BYPSHAD`をclearし`RSF`立上りを待つ。calendar全registerを1回のINIT sessionで書く
 - backup payloadはsignature、version、TCXO補正値、同期時刻、application CRCを持ち、CRCを最後にcommitする
 - RTC-domain configuration CRCはsoftware設定bitだけを対象とし、hardware更新bitを含めない

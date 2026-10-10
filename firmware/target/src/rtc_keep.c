@@ -170,20 +170,35 @@ void rtck_boot_check(void)
     PWR->CR1 |= PWR_CR1_DBP;
     (void)PWR->CR1;
 
+    /* BDRSTで消える前に、tamperの記録と電源断を越えたcalendarを残す（backup registerが消えたときの切分け） */
+    boot.tamp_sr = TAMP->SR;
+    boot.tamp_cr1 = TAMP->CR1;
+    if (rtck_clock_ready() && (RTC->ICSR & RTC_ICSR_INITS) && resync_shadow()) {
+        boot.pre_calendar = read_raw(&boot.pre_unix, NULL);
+    }
+
     const char *why = check_domain();
     lock();
     if (why == NULL) {
         boot.valid = true;
         boot.reason = "OK";
-        return;
+    } else {
+        /* 異常: backup domainをsoftwareで初期化する（set→read-back→clear）。時刻は無効 */
+        boot.valid = false;
+        boot.reason = why;
+        RCC->BDCR |= RCC_BDCR_BDRST;
+        boot.did_bdrst = (RCC->BDCR & RCC_BDCR_BDRST) != 0u;
+        RCC->BDCR &= ~RCC_BDCR_BDRST;
+        (void)RCC->BDCR;
     }
-    /* 異常: backup domainをsoftwareで初期化する（set→read-back→clear）。時刻は無効 */
-    boot.valid = false;
-    boot.reason = why;
-    RCC->BDCR |= RCC_BDCR_BDRST;
-    boot.did_bdrst = (RCC->BDCR & RCC_BDCR_BDRST) != 0u;
-    RCC->BDCR &= ~RCC_BDCR_BDRST;
-    (void)RCC->BDCR;
+    /*
+     * TAMP_CR1の初期値（0xFFFF0000）では内部tamper 3～6が有効で、ITAMP4（HSE monitoring）はHSE CSSの検出で
+     * backup registerを消す。USBを抜くと3V3が下がる途中でMCUより先にTCXOが止まるため、電源を切るたびに
+     * backupが消えていた（2026-10-10実測: 起動時TAMP_SR=ITAMP4F、calendarは電源断を越えて正しかった）。
+     * HSEの異常はCSS（NMI）で扱うので、backupは消させない。BDRSTで初期値へ戻るため毎回書く
+     */
+    TAMP->CR1 &= ~TAMP_CR1_ITAMP4E;
+    TAMP->SCR = TAMP_SCR_CITAMP4F;
 }
 
 const rtck_boot_t *rtck_boot(void)
