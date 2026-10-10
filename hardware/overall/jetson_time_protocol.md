@@ -6,7 +6,8 @@ Jetson UARTからSTM32へ時刻を設定・照会するframeを定義する。ST
 
 ## Transport
 
-- UART: 3.3 V、115200 baud、8N1
+- **USB（J1）のCDC interface 2**（DR-061）。interface 0はconsoleである。Linuxでは`/dev/serial/by-id/usb-cub2026_timing_sync_if_<UID>-if02`として見える。参照実装は[`../../firmware/tools/jetson_time.py`](../../firmware/tools/jetson_time.py)
+- J3のUART（3.3 V、8N1）はNMEA送信だけに使い、本protocolには使わない（P-11）
 - byte order: little-endian
 - 最大frame長: 64 bytes
 - inter-byte timeout: 20 ms。timeoutしたframeは破棄する

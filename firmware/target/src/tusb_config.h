@@ -1,4 +1,5 @@
-/* TinyUSB設定: USB FS device、CDC 1つ（console）、RTOSなし */
+/* TinyUSB設定: USB FS device、CDC 2つ（console、製品firmwareではJetson protocol）、RTOSなし。
+   libraryは全imageで共通なのでinstance数は2にし、使うinterfaceはdescriptorで決める */
 #ifndef TUSB_CONFIG_H
 #define TUSB_CONFIG_H
 
@@ -13,7 +14,7 @@
 #define CFG_TUSB_MEM_SECTION
 #define CFG_TUSB_MEM_ALIGN __attribute__((aligned(4)))
 
-#define CFG_TUD_CDC 1
+#define CFG_TUD_CDC 2
 #define CFG_TUD_MSC 0
 #define CFG_TUD_HID 0
 #define CFG_TUD_MIDI 0

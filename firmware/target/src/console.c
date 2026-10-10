@@ -11,6 +11,9 @@
 #ifdef FW_SELFTEST
 #include "selftest.h"
 #endif
+#ifdef FW_APP
+#include "timesync.h"
+#endif
 #include "stm32g0xx.h"
 #include "tusb.h"
 
@@ -22,7 +25,12 @@
 #endif
 
 #define LINE_MAX 64u
+#ifdef FW_APP
+/* 製品firmwareではmain loopがNMEAの準備（秒境界から200 ms以内）も行うので、待ちを短くする */
+#define WRITE_TIMEOUT_MS 5u
+#else
 #define WRITE_TIMEOUT_MS 50u
+#endif
 
 static char line[LINE_MAX];
 static size_t line_len;
@@ -79,9 +87,8 @@ void con_printf(const char *fmt, ...)
 /* terminalがportを開いた（DTRが立った）ら、main loopで起動情報を表示する */
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
-    (void)itf;
     (void)rts;
-    if (dtr) {
+    if (itf == 0u && dtr) {
         banner_pending = true;
     }
 }
@@ -133,6 +140,12 @@ static void cmd_help(const char *arg)
                "  log    on/off 毎秒の状態表示\r\n"
                "  dfu    system bootloader（USB DFU）へ移る\r\n"
                "  reset  software reset\r\n");
+#ifdef FW_APP
+    con_printf("  status 時刻同期の状態（state、UTC、出力、DPLL、各TXの送信数）\r\n"
+               "  gnss   GNSS受信（baud、NMEA、PPS→RMCの遅れ、位置）。gnss baud <n> / gnss auto\r\n"
+               "  out    出力のenable状態。out on / out off / out mask <hex>（bit0=J3…bit5=J8）\r\n"
+               "  reinit FAULTなどからINIT_INVALIDへ戻す（全出力High-Z）\r\n");
+#endif
 }
 
 static void cmd_id(const char *arg)
@@ -372,8 +385,13 @@ static void execute(char *cmd)
         {"help", cmd_help}, {"id", cmd_id},   {"clk", cmd_clk}, {"regs", cmd_regs},   {"pps", cmd_pps},
         {"lse", cmd_lse},   {"log", cmd_log}, {"gpio", diag_gpio}, {"inputs", diag_inputs},
         {"rxidle", diag_rxidle}, {"dfu", cmd_dfu}, {"reset", cmd_reset},
+#ifdef FW_APP
+        {"status", timesync_cmd_status}, {"gnss", timesync_cmd_gnss}, {"out", timesync_cmd_out},
+        {"reinit", timesync_cmd_reinit},
+#endif
 #ifdef FW_SELFTEST
-        {"ut", selftest_ut},     {"fault", selftest_fault},
+        {"ut", selftest_ut},     {"fault", selftest_fault}, {"loop", selftest_loop},
+        {"ppsloop", selftest_ppsloop},
 #endif
     };
 
@@ -406,13 +424,27 @@ static void print_banner(void)
     const board_boot_info_t *b = board_boot_info();
     const uint32_t rev_id = DBG->IDCODE >> DBG_IDCODE_REV_ID_Pos;
 
+#ifdef FW_APP
+    con_printf("\r\ntiming_sync_if firmware %s (%s %s)\r\n", FW_BUILD_ID, __DATE__, __TIME__);
+    con_printf("REV_ID 0x%04" PRIX32 "、clock %s\r\n", rev_id,
+               b->clock_mode == BOARD_CLOCK_PLL_HSE ? "PLL_HSE 48 MHz" : "FALLBACK_HSI（TCXO系の異常、出力High-Z）");
+#else
     con_printf("\r\ntiming_sync_if bring-up firmware %s (%s %s)\r\n", FW_BUILD_ID, __DATE__, __TIME__);
     con_printf("REV_ID 0x%04" PRIX32 "、clock %s、外部出力はすべてHigh-Z\r\n", rev_id,
                b->clock_mode == BOARD_CLOCK_PLL_HSE ? "PLL_HSE 48 MHz" : "FALLBACK_HSI（TCXO系の異常）");
+#endif
     con_printf("helpでcommand一覧。毎秒の状態表示は log off で止まる\r\n> ");
 }
 
 /* 生成PPSの秒境界ごとに1行の状態を出す。入力途中の行があるときは崩さないよう出さない */
+#ifdef FW_APP
+static void log_second(uint32_t seconds)
+{
+    if (log_enabled && line_len == 0u && tud_cdc_connected()) {
+        timesync_log_line(seconds);
+    }
+}
+#else
 static void log_second(uint32_t seconds)
 {
     const board_boot_info_t *b = board_boot_info();
@@ -440,6 +472,7 @@ static void log_second(uint32_t seconds)
     }
     con_printf(" OE=High-Z\r\n> ");
 }
+#endif
 
 void console_task(void)
 {
@@ -450,9 +483,15 @@ void console_task(void)
         banner_pending = false;
         print_banner();
     }
+#ifdef FW_APP
+    if (timesync_second_elapsed(&seconds)) {
+        log_second(seconds);
+    }
+#else
     if (board_pps_second_elapsed(&seconds)) {
         log_second(seconds);
     }
+#endif
 
     while (tud_cdc_available() > 0u) {
         const int32_t c = tud_cdc_read_char();

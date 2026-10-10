@@ -1,5 +1,5 @@
 /*
- * USB descriptor（CDC 1つ）
+ * USB descriptor（CDC 1つ。製品firmware（FW_APP）はJetson protocol用にもう1つ）
  *
  * VID/PIDはTinyUSBの試験用値0xCAFEを仮に使う。製品用の値はfirmware/test_plan.md のP-21で決める。
  * serial numberはMCUの96-bit UIDから作る。
@@ -15,6 +15,10 @@
 enum {
     ITF_NUM_CDC = 0,
     ITF_NUM_CDC_DATA,
+#ifdef FW_APP
+    ITF_NUM_CDC2,
+    ITF_NUM_CDC2_DATA,
+#endif
     ITF_NUM_TOTAL
 };
 
@@ -24,13 +28,21 @@ enum {
     STRID_PRODUCT,
     STRID_SERIAL,
     STRID_CDC,
+    STRID_CDC2,
 };
 
 #define EPNUM_CDC_NOTIF 0x81
 #define EPNUM_CDC_OUT 0x02
 #define EPNUM_CDC_IN 0x82
+#define EPNUM_CDC2_NOTIF 0x83
+#define EPNUM_CDC2_OUT 0x04
+#define EPNUM_CDC2_IN 0x84
 
+#ifdef FW_APP
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + 2 * TUD_CDC_DESC_LEN)
+#else
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+#endif
 
 static const tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
@@ -53,12 +65,16 @@ static const tusb_desc_device_t desc_device = {
 static const uint8_t desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0x00, 100),
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
+#ifdef FW_APP
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC2, STRID_CDC2, EPNUM_CDC2_NOTIF, 8, EPNUM_CDC2_OUT, EPNUM_CDC2_IN, 64),
+#endif
 };
 
 static const char *const string_desc[] = {
     [STRID_MANUFACTURER] = "cub2026",
     [STRID_PRODUCT] = "timing_sync_if",
     [STRID_CDC] = "timing_sync_if console",
+    [STRID_CDC2] = "timing_sync_if jetson",
 };
 
 static uint16_t desc_str[32 + 1];

@@ -76,6 +76,39 @@ L1でロジックを網羅し、L2以降は「実機でしか確認できない�
 | P-21 | USBのVID/PIDと製品文字列 | 規定なし。bring-up firmwareはTinyUSBの試験用VID 0xCAFE / PID 0x4001を仮に使っている | BU-12、SY-01 | |
 | P-22 | Rev A（`REV_ID=0x1000`）の基板でoption byteを変更するか（BU-07、SW2+SW1によるDFU） | 1枚目の基板はRev Aだった（2026-10-03）。ES0548 §2.2.9により、option byte変更が失敗するとBOOT_LOCKとRDP Level 1が設定され、debugも書換えもできなくなる | BU-07、BU-08 | 変更しない場合の復旧手段はUSBの`dfu` command、HardFault時の自動bootloader移行、SWD。firmwareが起動直後に止まった場合はSWDだけになる |
 
+### 2.1 決定済みの項目と、firmwareの暫定値（2026-10-04）
+
+DR-061で決めた項目:
+
+- P-03: `FAULT`の閾値は位相差100 ms
+- P-05: GNSS以外の時刻（RTC、Jetson）からGNSSへ移るとき、位相差1 ms以下ならslew、超えたらHigh-Zにしてstepし、2秒正常の後に再enable
+- P-11: Jetsonとの双方向通信はUSB CDC（interface 2）。J3のUARTはNMEA送信だけ
+
+製品firmware（`app` image、[`target/src/timesync.c`](./target/src/timesync.c)冒頭）に入れた暫定値。実機の結果を見て決め、DRへ記録する:
+
+| ID | 暫定値 |
+|---|---|
+| P-01 | GNSS PPS間隔の許容は1秒±100 ppm。`GNSS_LOCKED`中は100 usより離れたPPSを欠落とみなす |
+| P-04 | 位相差1 us以内が5秒続いたら`RESYNC`→`GNSS_LOCKED` |
+| P-06 | PPS経路の固定offsetは全基板共通の6 count（125 ns、J3→J2折返しの実測）。基板ごとの保存はしない |
+| P-07 | J2の受信baudは115200から自動選択（9600～921600）。RMCはGP/GNどちらも受ける。RMCは直前のGNSS PPS（990 ms以内）の時刻として扱う |
+| P-08 | 全channel GPRMC、9600 baud、8N1。時刻の小数部はVLP（J4）だけなし、他は2桁 |
+| P-09 | holdover・`RESYNC`中はstatus `V`、mode `N`、位置fieldは空欄 |
+| P-10 | 全channel、PPS立上りの200 ms後に送り始める |
+| P-12 | `FAULT`からは`FORCE_SET_TIME`、`SET_TIME`、consoleの`reinit`で抜ける。同じsequenceで内容が違うrequestは新しいrequestとして扱う |
+| P-15 | console（interface 0）に`status`、`gnss`、`out`、`reinit`を加えた |
+| P-16 | LED: `GNSS_LOCKED`はPPSに合わせ100 ms、holdover系は2回点滅、`FAULT`は速い点滅、時刻なしは短く1回 |
+
+時刻保持（内蔵RTC、[`target/src/rtc_keep.c`](./target/src/rtc_keep.c)）の実装上の決め事:
+
+- backup registerは5本（TAMP_BKP0R～BKP4R）しかないので、signature/version/flags、検証済みTCXO補正値、最後の同期時刻、application CRC、configuration CRCだけを置く。**Jetsonの`last source_id`/`last sequence`は電源の入れ直しで0に戻る（JP-10の一部を満たさない）**
+- RTCのcalendarは、GNSS lock時、Jetson SETの適用後、RTCの秒が生成PPSの秒と違うとき、RTCの秒境界が生成PPSから5 ms以上ずれたときに書き直す。INIT解除は生成PPSの秒境界でTIM2割込みから行う
+- smooth calibration（CALR）は、`GNSS_LOCKED`中にLSEの測定が300秒たまってから、LSEの偏差（TCXO基準の測定＋GNSSで求めたTCXO偏差）で決める
+- LSEが動いていない（RTC_INVALID）ときのJetson SETは、RTCへ書かずに時刻だけ使い、ACKを返す
+- Jetson SET（step）のACKは、時刻の適用とcalendarの書込み・読み返し・backup commitの後に返す（約7秒）
+
+未実装: watchdog（P-14）
+
 ## 3. 試験環境
 
 ### 3.1 機材

@@ -22,16 +22,37 @@ USB CDC（Windowsでは`COMx`、VID 0xCAFE / PID 0x4001）をTera TermやPuTTY�
 
 consoleのcommand: `help`、`id`（DEV_ID/REV_ID/UID/reset要因）、`clk`、`regs`（初期化registerの監査）、`pps`、`lse`（X1の起動とTCXOに対する偏差）、`gpio`（全I/O pinの設定照合）、`inputs`（U4出力の静的レベル＝外部入力のbiasと反転の確認）、`rxidle`（受信UART 4系統の未接続時の誤受信確認）、`log on`/`log off`（毎秒の状態表示）、`dfu`（USB DFUへ移る）、`reset`。`fwctl.py`はcommand実行中だけ`log off`にする。
 
+### 製品firmware（app image）
+
+`firmware/build/target/app.hex`。GNSS（J2: UM982のPPSとRMC）で生成PPSを規律し、J3～J8の6系統へPPSとGPRMC（9600 baud、PPS立上りの200 ms後）を出す。J4（VLP）はTXINVで反転し、UTC+1秒にする。状態遷移と暫定値は[`test_plan.md`](./test_plan.md) §2.1。
+
+- 起動直後は全出力High-Z。GNSSのPPSとstatus `A`のRMCが5秒続き、位相差が1 us以内になるとlockし、出力をenableする
+- GNSSを失うとholdover（PPS継続、RMC=`V`）。GNSSが戻るとslewで合わせてlockへ戻る
+- USB CDCが2つ出る。interface 0がconsole（`fwctl.py`はこちらを使う）、interface 2がJetson protocol（[`tools/jetson_time.py`](./tools/jetson_time.py)）
+- GNSSがない場所では、`jetson_time.py set`でPC/Jetsonの時計から時刻を与えると、holdover（RMC=`V`）で出力を始める
+- 時刻は内蔵RTC（LSE）にも書き、CR2032があれば電源OFF中も保持する。起動時にbackup domainを検証し（signature、CRC、RTC設定、calendar範囲、SSRの進み）、合格すればRTCの秒境界へ生成PPSを揃え、RTCの秒が2回続けて一致してからholdover（RMC=`V`）で出力を始める。不合格ならBDRSTして時刻なしで起動する。software reset・DFU書込みでは電源が切れないので電池なしでも保持される
+
+consoleのcommand（bring-upのcommandに加えて）: `status`（state、UTC、出力、DPLL、各TXの送信数、最後に送ったRMC）、`gnss`（受信baud、NMEA数、PPS→RMCの遅れ、位置。`gnss baud 115200`で固定、`gnss auto`で自動）、`out`（`out off`で全出力High-Z、`out on`で戻す、`out mask 3F`でTXを選ぶ）、`reinit`（`FAULT`などから`INIT_INVALID`へ戻す）。毎秒のlogは状態、UTC、GNSS PPSの位相差（count、1 count=20.8 ns）、RMC status、TCXO偏差の推定を出す。
+
+```sh
+py -3 -X utf8 firmware/tools/fwctl.py flash firmware/build/target/app.hex
+py -3 -X utf8 firmware/tools/fwctl.py cmd status gnss
+py -3 -X utf8 firmware/tools/jetson_time.py watch     # Jetson protocolで毎秒GET_STATUS
+```
+
 ### selftest image（test build）
 
 `firmware/build/target/selftest.hex`はbring-upに試験用commandを加えたもの（約100 KB、full newlib）。使い終わったら`bringup.hex`へ戻す。
 
 - `ut`: `tests/host/test_*.c`をそのままMCU上で実行する（UT-13、約30秒）。`fwctl.py cmd -t 180 ut`
 - `fault css`: 次の起動をHSE CSSの後と同じclock診断mode（SYSCLK=HSI16、USB=HSI48+CRS）にする。`reset`で通常に戻る
+- `loop j3`（`j7`、`j8`）: 対象コネクタのpin 3とpin 4を短絡して実行する（UA-03、IO-03）。OE_N disableで折り返らないこと、enableでの静的レベルと極性、9600～3000000 baudの送受信一致を見る。`loop j3 115200 1000000`のようにbaudとbyte数を与えると、その1条件だけを長く行う（`fwctl.py cmd -t 150 "loop j3 115200 1000000"`）。試験中だけ対象channelのOE_Nを下げ、終わるとHigh-Zに戻す
+- `loop j3j2`: J3 pin 1～3をJ2 pin 1～3へつないで実行する。J3 TX→J2 NMEA入力（USART3）で同じ試験を行う。`loop j3j2 pps`はUART試験の間も`PPS_OE_N`を下げて生成PPSをJ2 pin 2へ入れ、GNSS PPS captureに誤captureが出ないことも見る
+- `ppsloop [秒]`: J3 pin 2→J2 pin 2で生成PPSをGNSS PPS capture（TIM2 CH1）へ折り返す。`PPS_OE_N` disableでcaptureがないこと、enableで毎秒1回、立上りからの遅れが一定であること、両edgeでHigh幅100 msを見る。`PPS_OE_N`はJ3～J8のpin 2を同時に出すので、J4～J8には何もつながない
 
 ### buildと書込み
 
-ARM toolchainはMSYS2の`mingw-w64-x86_64-arm-none-eabi-toolchain`と`mingw-w64-x86_64-ninja`、書込みはSTM32CubeProgrammerを使う。
+ARM toolchainはMSYS2の`mingw-w64-x86_64-arm-none-eabi-toolchain`と`mingw-w64-x86_64-ninja`、書込みはSTM32CubeProgrammerを使う（Arm GNU Toolchain 14.2.Rel1のzipとpipの`ninja`でもbuildできる）。STM32CubeProgrammerがない場合、`fwctl.py flash`はdfu-util（環境変数`DFU_UTIL`またはPATH）で`.bin`を書いて読み戻し照合する。どちらもDFU（0483:DF11）にdriverが要る。
 
 ```sh
 export PATH="/c/msys64/mingw64/bin:$PATH"

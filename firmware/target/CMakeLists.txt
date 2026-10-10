@@ -85,16 +85,21 @@ function(add_fw_image name nano)
     COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${name}>)
 endfunction()
 
-# bring-up firmware（通常使うimage）
+# bring-up firmware（全出力High-Zのまま診断する）
 add_fw_image(bringup TRUE)
 
-# selftest firmware: bring-upに試験用command（ut、fault）を加えたtest build（test_plan §3.3）
+# 製品firmware: GNSSで規律したPPS/RMCをJ3～J8へ出す。JetsonとはUSBの2つ目のCDC
+add_fw_image(app TRUE)
+target_sources(app PRIVATE src/timesync.c src/jetson_usb.c src/rtc_keep.c)
+target_compile_definitions(app PRIVATE FW_APP=1)
+
+# selftest firmware: bring-upに試験用command（ut、fault、loop）を加えたtest build（test_plan §3.3）
 # hostのL1試験sourceをそのままMCU上で実行する（UT-13）
 add_fw_image(selftest FALSE)
-target_sources(selftest PRIVATE src/selftest.c)
+target_sources(selftest PRIVATE src/selftest.c src/selftest_loop.c)
 target_include_directories(selftest PRIVATE ${FW_ROOT}/tests/host)
 target_compile_definitions(selftest PRIVATE FW_SELFTEST=1)
-foreach(t crc32c jetson_proto nmea time)
+foreach(t crc32c dpll jetson_proto nmea time)
   set(src ${FW_ROOT}/tests/host/test_${t}.c)
   target_sources(selftest PRIVATE ${src})
   set_source_files_properties(${src} PROPERTIES COMPILE_DEFINITIONS main=ut_${t}_main)

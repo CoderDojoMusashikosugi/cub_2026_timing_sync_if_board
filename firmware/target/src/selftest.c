@@ -9,6 +9,7 @@
 
 /* tests/host/test_*.cのmainをCMakeで改名したもの */
 int ut_crc32c_main(void);
+int ut_dpll_main(void);
 int ut_jetson_proto_main(void);
 int ut_nmea_main(void);
 int ut_time_main(int argc, char **argv);
@@ -47,6 +48,8 @@ void selftest_ut(const char *arg)
     const uint32_t t0 = board_millis();
     printf("== test_crc32c\n");
     failed_files += ut_crc32c_main() != 0;
+    printf("== test_dpll\n");
+    failed_files += ut_dpll_main() != 0;
     printf("== test_jetson_proto\n");
     failed_files += ut_jetson_proto_main() != 0;
     printf("== test_nmea\n");
