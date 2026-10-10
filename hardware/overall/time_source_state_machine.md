@@ -7,6 +7,7 @@
 - UTCが一度も確立していない状態では、全出力bufferをHigh-Zにする。
 - GNSS喪失後もPPS/NMEAを継続するが、RMC statusは`V`とし、測位有効性を偽らない。
 - 出力中の時刻補正は原則slewとし、短パルス、二重パルス、パルス欠落、秒の逆行を発生させない。
+- 出力bufferのenable・High-Zの切替は、PPSがLowでNMEAを送っていない時点（firmwareでは秒内150 ms）だけで行い、PPSのパルスやNMEAの文を途中で切らない。High-Zは秒境界を動かすstepより前に完了させる。clock異常によるresetだけは例外で、OE_Nのpull-upで直ちにHigh-Zになる。
 
 ## Clock・内蔵RTC設定
 

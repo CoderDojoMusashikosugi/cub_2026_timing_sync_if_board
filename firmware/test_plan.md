@@ -292,6 +292,7 @@ L1（UT）はP1と並行して始め、P3開始までに全項目を合格させ
 | PP-10 | holdover精度（R-013） | P-18の時間だけlockした後、T-02でGNSSを切り、5分間の出力PPSと真値PPSの位相差をT-03で記録する。H-04の内部記録と並行して取る | 5分間を通して誤差が絶対値1 ms以下（R-013、design §6.6）。0/25/40 ℃で各5回以上（EN-01） | 代表 |
 | PP-11 | GNSS復帰 | holdover 5分と1時間の後にT-02で復帰させる | 5回連続正常の後に`RESYNC`、±100 us/s以内で収束してlock（P-04）。異常パルスゼロ（design §8） | 代表 |
 | PP-12 | 内部記録の妥当性 | H-04の値とT-03の外部測定を同時に取って比べる | 差が固定offsetの範囲内（以降の長時間試験でH-04を使えるようにするため） | 代表 |
+| PP-13 | 出力の切替で切れない | J3/J4 pin 2をscopeの「正パルス幅 < 99 ms」triggerで見ながら、consoleの`out off`/`out on`と`FORCE_SET`（JP-05）を秒内のrandomな時点で各50回以上行う。TXはlogic analyzerでdecodeする | 短パルスゼロ、途中で切れた文ゼロ。enableした秒のNMEAはJ4だけ（P-10） | 代表 |
 
 ### 5.7 RTC・backup domain（RT）
 
@@ -476,7 +477,7 @@ T-04を使ってUSB（J1）のCDC interface 2から行う（DR-061）。
 | 〃 | 3.3 V電流、droop、U3温度 | PW-01 |
 | 〃 | VLP側の開放電圧 | SY-02 |
 | 〃 | holdover中RMC=Vでのtimestamp追従 | SY-02、SY-03 |
-| 〃 | 切替時に短パルス・二重パルス・秒飛びなし | PP-06、PP-11、LR-03 |
+| 〃 | 切替時に短パルス・二重パルス・秒飛びなし | PP-06、PP-11、PP-13、LR-03 |
 | 〃 | 電源順序でHigh-Z、外部入力を駆動しない | PW-05、IO-01 |
 | 〃 | PA6の通常build/debug build、TP9なしで全機能 | IO-05 |
 

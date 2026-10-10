@@ -18,7 +18,7 @@
 #define PPS_SETPOINT 6            /* P-06: J3→J2折返しの実測6 count（125 ns、出力buffer＋入力経路）を全基板共通の既定値 */
 #define OUT_BAUD 9600u            /* P-08: 全channel GPRMC、9600 baud、8N1 */
 #define NMEA_START_COUNTS 9600000u /* P-10: PPS立上りの200 ms後に送り始める（VLP・Mid-360の両方の時間窓に入る） */
-#define OE_ENABLE_COUNTS 7200000u  /* 出力のenableはPPSがLowの150 msで行い、短パルスを作らない */
+#define OE_ENABLE_COUNTS 7200000u  /* 出力のenable・High-Zの切替は150 ms（PPSがLow、NMEA送信前）で行い、PPSもNMEAも途中で切らない */
 #define INTERVAL_TOL 4800         /* P-01: GNSS PPS間隔の許容 1秒±100 ppm */
 #define LOCK_COUNT 5u             /* PPS＋有効RMCの連続回数（状態遷移表） */
 #define LOCK_ERR 48               /* P-04: 位相差1 us以内を揃ったとみなす */
@@ -84,10 +84,13 @@ typedef struct {
 } tx_t;
 
 static tx_t tx[CH_COUNT];
-static uint8_t out_mask = 0x3Fu;   /* consoleで止められるTX channel（bit0=J3～bit5=J8） */
+static volatile uint8_t out_mask = 0x3Fu; /* consoleで止められるTX channel（bit0=J3～bit5=J8）。150 msの割込みでも読む */
 static bool out_inhibit;           /* consoleの out off */
 static volatile bool oe_on;        /* PPS_OE_Nと各TX OE_NをLowにしている */
 static volatile bool oe_request;   /* 次の150 msでenableする */
+static volatile bool oe_off_request; /* 次の150 msでHigh-Zにする。それまで新しいNMEAは送らない */
+static volatile bool oe_mask_dirty;  /* 次の150 msでTX OE_Nをout_maskに合わせる */
+static volatile uint32_t oe_since;   /* enableした期間の番号。この期間の秒境界のPPSは出ていない */
 
 /* ---- GNSS受信（USART3 RX、PB11） ---- */
 
@@ -391,22 +394,44 @@ static uint32_t oe_bits(void)
     return bits;
 }
 
-/* すぐHigh-Zにする */
+/*
+ * 出力の切替はどちらも秒内の150 msだけで行う（oe_apply）。PPSは100 msで立ち下がっており、NMEAは200 msから
+ * 送るので、パルスも文も途中で切れない。High-Zは最大で約1.15秒遅れるが、stepで動く秒境界は早くても
+ * dpll_alignを呼んだ期間の3つ先（ARRのpreload）なので、それより前にHigh-Zになる
+ */
+
+/* 次の150 msでHigh-Zにする */
 static void outputs_off(void)
 {
     __disable_irq();
     oe_request = false;
-    GPIOB->BSRR = BOARD_OE_N_PINS;
-    oe_on = false;
+    oe_off_request = oe_on;
     __enable_irq();
 }
 
-/* 次の150 ms（PPSがLowの間）でenableする */
+/* 次の150 msでenableする。High-Zの予約は取り消す */
 static void outputs_on_request(void)
 {
-    if (!out_inhibit && !oe_on) {
+    if (out_inhibit) {
+        return;
+    }
+    __disable_irq();
+    oe_off_request = false;
+    if (!oe_on) {
         oe_request = true;
     }
+    __enable_irq();
+}
+
+static const char *outputs_name(void)
+{
+    if (oe_off_request) {
+        return "enable（次の150 msでHigh-Z）";
+    }
+    if (oe_request) {
+        return "High-Z（次の150 msでenable）";
+    }
+    return oe_on ? "enable" : "High-Z";
 }
 
 /* ---- TIM2 ---- */
@@ -454,10 +479,32 @@ static void on_update(void)
     boundary_flag = true;
 }
 
-/* 150 ms: 出力のenable。200 ms: 準備できたNMEAの送信開始 */
+/* 150 ms: 出力のenable・High-Zの切替 */
+static void oe_apply(void)
+{
+    if (oe_off_request) {
+        oe_off_request = false;
+        GPIOB->BSRR = BOARD_OE_N_PINS;
+        oe_on = false;
+    } else if (oe_request) {
+        oe_request = false;
+        GPIOB->BRR = oe_bits();
+        oe_on = true;
+        oe_since = tim_index;
+    }
+    if (oe_mask_dirty) {
+        oe_mask_dirty = false;
+        if (oe_on) {
+            GPIOB->BSRR = BOARD_OE_N_PINS & ~oe_bits();
+            GPIOB->BRR = oe_bits();
+        }
+    }
+}
+
+/* 200 ms: 準備できたNMEAの送信開始 */
 static void nmea_kick(void)
 {
-    if (!oe_on) {
+    if (!oe_on || oe_off_request) {
         return;
     }
     for (unsigned i = 0; i < CH_COUNT; i++) {
@@ -498,11 +545,7 @@ void TIM2_IRQHandler(void)
     }
     if (sr & TIM_SR_CC4IF) {
         TIM2->SR = ~TIM_SR_CC4IF;
-        if (oe_request) {
-            oe_request = false;
-            GPIOB->BRR = oe_bits();
-            oe_on = true;
-        }
+        oe_apply();
     }
     if (sr & TIM_SR_CC3IF) {
         TIM2->SR = ~TIM_SR_CC3IF;
@@ -1231,7 +1274,13 @@ static void rtc_poll(void)
 
 static void prepare_nmea(uint32_t index)
 {
-    if (!time_valid || !(oe_on || oe_request) || stepping) {
+    __disable_irq();
+    const bool on = oe_on && !oe_off_request;
+    const bool starting = !oe_on && oe_request;
+    /* この秒境界のPPSを出したか。enableする期間の秒境界はHigh-Zだったので、+1秒の系統（次のPPSの時刻）の文だけ作る */
+    const bool pps_out = on && oe_since != index;
+    __enable_irq();
+    if (!time_valid || !(on || starting) || stepping) {
         return;
     }
     const bool locked = state == TS_JP_STATE_GNSS_LOCKED;
@@ -1246,7 +1295,7 @@ static void prepare_nmea(uint32_t index)
     o.mode = locked ? (last_fix_valid && last_fix.mode != '\0' ? last_fix.mode : 'A') : 'N';
     for (unsigned i = 0; i < CH_COUNT; i++) {
         tx_t *t = &tx[i];
-        if (!(out_mask & (1u << i))) {
+        if (!(out_mask & (1u << i)) || (!pps_out && !channels[i].plus_one)) {
             continue;
         }
         if (t->busy) {
@@ -1445,7 +1494,7 @@ void timesync_cmd_status(const char *arg)
     } else {
         con_printf("無効\r\n");
     }
-    con_printf("出力       %s（mask 0x%02X%s）\r\n", st.outputs_on ? "enable" : "High-Z", out_mask,
+    con_printf("出力       %s（mask 0x%02X%s）\r\n", outputs_name(), out_mask,
                out_inhibit ? "、out offで停止中" : "");
     con_printf("DPLL       mode=%s F=", dpll.mode == TS_DPLL_TRACK ? "TRACK" : "HOLD");
     print_ppb(freq_ppb());
@@ -1547,14 +1596,9 @@ void timesync_cmd_out(const char *arg)
         }
     } else if (strncmp(arg, "mask ", 5) == 0) {
         out_mask = (uint8_t)(strtoul(arg + 5, NULL, 16) & 0x3Fu);
-        if (oe_on) {
-            /* maskから外したTXだけHigh-Zにし、加えたものは次のenableで入る */
-            GPIOB->BSRR = BOARD_OE_N_PINS & ~oe_bits();
-            GPIOB->BRR = oe_bits();
-        }
+        oe_mask_dirty = true; /* TX OE_Nは次の150 msで合わせる（送信中の文を切らない） */
     }
-    con_printf("出力 %s、TX mask 0x%02X（bit0=J3 … bit5=J8。PPSは6系統共通）\r\n", oe_on ? "enable" : "High-Z",
-               out_mask);
+    con_printf("出力 %s、TX mask 0x%02X（bit0=J3 … bit5=J8。PPSは6系統共通）\r\n", outputs_name(), out_mask);
     con_printf("TX %" PRIu32 " baud、J4（VLP）TXINV=%u、J4はUTC+1秒\r\n", (uint32_t)OUT_BAUD,
                (USART4->CR2 & USART_CR2_TXINV) ? 1u : 0u);
     con_printf("usage: out [on | off | mask <hex>]\r\n");
@@ -1568,7 +1612,7 @@ void timesync_cmd_reinit(const char *arg)
         return;
     }
     enter_invalid("reinit");
-    con_printf("INIT_INVALIDへ戻した（全出力High-Z）\r\n");
+    con_printf("INIT_INVALIDへ戻した（出力 %s）\r\n", outputs_name());
 }
 
 bool timesync_second_elapsed(uint32_t *index)
