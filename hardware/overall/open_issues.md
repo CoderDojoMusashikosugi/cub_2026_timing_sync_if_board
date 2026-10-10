@@ -1,17 +1,17 @@
 # 未解決事項・リリース条件
 
-- 更新日: 2026-09-06
+- 更新日: 2026-10-10
 - 対象: 初回試作
-- 状態: DR-057で第2回EasyEDA実回路図を正本へ同期し、DR-058でBT1極性を確認、DR-059でU3を逆電流保護付きTPS70933DBVRへ置換してOI-012を解決した。**DR-060で在庫切れのMCUを`STM32G0B1RCT6` / `C3034735`へ変更した（pinout・footprintとも同一のためPCB変更なし）。** R-013は試作実測待ちであり、残る判断待ちはOI-001/OI-003/OI-014/OI-015である。
+- 状態: 2026-09-06に発注した（DR-060でMCUを`STM32G0B1RCT6` / `C3034735`へ変更）。2026-10-03から2枚（UID `…000F0038`、`…000E0038`）で試験しており、試験の進め方は[`../../firmware/test_plan.md`](../../firmware/test_plan.md)、結果は基板ごとに[`../../firmware/test_results/`](../../firmware/test_results/)へ記録する。残る判断待ちはOI-001/OI-003/OI-016/OI-018である。GNSSの受信（OI-017）は2026-10-10に解決し、屋外で`GNSS_LOCKED`まで確認した。R-013は試作実測待ちである。
 
 ## 判断待ち
 
 | ID | 項目 | 現在の前提 | 完了期限 |
 |---|---|---|---|
-| OI-001 | J2～J8ハーネスの相手機器側connector/pin、線色、線長 | 基板側pinだけ確定。TBDを推測で埋めない | 試作ハーネス製作前 |
-| OI-003 | 取付穴と最大部品高さ | 外形75 mm x 50 mm。穴は筐体条件取得まで配置しない | PCB外形・配置release前 |
-| OI-014 | U3置換後のEasyEDA成果物・DRC確認 | U3は`TPS70933DBVR` / C89347へ置換済みとの報告を受け、正本文書と予備BOMをDR-059で更新した。一方、`review_20260815_02/materials`の`.epro2`、`.enet`、PDF、BOM、DRCログは旧`TPS7A2433DBVR`のまま。再export後にMPN、C-code、SOT-23-5 pin 1～5、`VBUS_PROTECTED`/`3V3`接続、DRC 0件を照合する | PCB/BOM/CPL release前 |
-| OI-015 | MCU品番変更後のEasyEDA成果物・BOM確認 | DR-060でU1を`STM32G0B1RCT6` / `C3034735`へ変更し、正本文書と予備BOMを更新した。EasyEDA Pro側U1の部品番号差し替えと再exportは未了。package uuidが旧品と同一（`2afd511af2e94adea785d3da1efd72a1`）のためPCB再配線は不要だが、再export後にMPN、C-code、LQFP-64のpin 1～64、pin 40=PD8 / 41=PD9が電源netへ接続されていないこと、DRC 0件を照合する | PCB/BOM/CPL release前 |
+| OI-001 | J2～J8ハーネスの相手機器側connector/pin、線色、線長 | 基板側pinだけ確定。2026-10-10に試作ハーネスでJ2～J8を各機器へつないで試験したが、相手側のpin・線色・線長は[`harness_pinout.md`](./harness_pinout.md)へ記録していない。TBDを推測で埋めない | 実機統合試験（test_plan P6）前 |
+| OI-003 | 取付穴と最大部品高さ | 発注版のPCBには取付穴がない（[round3 checklist](../../pcb_review/round3/claude_code/review_checklist.md)）。筐体条件は未取得 | 筐体設計・次版PCB前 |
+| OI-016 | 発注版PCBと正本・EasyEDA原本の不一致 | 発注時の最終成果物（`pcb_review/round3/materials`）は4層・60 × 38 mmで、[`design.md`](../../plan/design.md) §6.7、DR-023、[`pcb_layout_guidelines.md`](./pcb_layout_guidelines.md)の2層・75 × 50 mmと合わない（PCB-CX-002）。PCB-CX-003～006（LSE直下のGND、TPの面、F1/R3の排他表示、コネクタ間隔）も未解決のまま発注した（[round3 review](../../pcb_review/round3/codex/review_result.md)）。EasyEDAのBOM exportはU1が旧`STM32G0B1RBT6` / `C5143679`のまま（実装品は`RCT6`、OI-015）で、PCB DRCのログは保存していない。実物の外形・層数を確かめ、正本を発注版に合わせるか、次版で正本に戻すかを決める | 次版PCB前 |
+| OI-018 | 基板のUSBが列挙されたまま応答しなくなる | 2026-10-10 16:00～16:03にUID `…000E0038`で1回起きた。COM8・COM9とも開くと戻らず、電源の入れ直しで戻った。DFUが現れないのでHardFaultではなく、main loopが止まった疑い。J2には何も届いていなかったのでGNSSの受信は関係ない。17:55～18:13にも記録が途切れたが、PCの蓋を閉じたためかは不明。原因は未特定（[試験記録](../../firmware/test_results/2036324356305018000E0038/summary.md)） | release前 |
 
 ## 解決済み
 
@@ -28,8 +28,15 @@
 | OI-011 | 専用clock LDOは削除し、U14 comparatorとC11/C12/C13/R5-R8を使用する | DR-050で旧「buffer不要」を撤回。clipped-sine U2をPF0に適合させる最小回路とし、固定伝搬遅延は周波数へ累積しないことを試作確認する |
 | OI-012 | DR-059でU3を逆電流保護付き`TPS70933DBVR` / C89347へ置換する | TPS709は逆電流保護を内蔵し、`VOUT=3 V、VIN=VEN=0 V`でIN pinから流出する逆電流typ 10 nA、OUT pinへ流入する電流typ 100 nA。旧TPS7A24の`VOUT > VIN`時ボディダイオード課題を部品置換で解消した。USB切断・再投入試験は機能確認として継続する |
 | OI-013 | DR-058でBT1 `BS-CR2032-8` / C7498149をpin 1=`-`/GND、pin 2=`+`/R4・`VBAT_RTC`側と確定する | 受領`.epro2`内のfootprint polarity表示、LCSC公開EasyEDA footprint、受領netlistの3者が一致した。根拠は[`../sch_reviews/review_20260815_02/Codex/bt1_polarity_verification.md`](../sch_reviews/review_20260815_02/Codex/bt1_polarity_verification.md) |
+| OI-014 | U3は`TPS70933DBVR` / C89347で発注・実装した | 発注版の回路図・両netlist・両BOMで品番、C-code、pin 1～5の接続を照合した（[PCB round1 review](../../pcb_review/round1/codex/review_result.md)）。実基板で`3V3`=3.288 V（BU-03、UID `…000F0038`）。PCB DRCログがない点はOI-016へ移した |
+| OI-015 | U1は`STM32G0B1RCT6`が実装された | 2枚ともfirmwareの`id`で`DEV_ID` 0x467、flash容量register 256 KB（`RBT6`なら128 KB）。EasyEDAのBOM exportが旧品番のままである点はOI-016へ移した |
+| OI-017 | UM982からJ2へ信号が来なかった原因は、ハーネスのUM982側でTXとRXを取り違えていたこと | 2026-10-10にUID `…000E0038`で、UM982 2台のCOM1～COM3すべてへRMCを出してもJ2が無反応なことから配線を疑い、直した後はUM982のCOM3（115200）から受信できた。屋外でPPSとRMC=Aがそろってから8秒で`GNSS_LOCKED`、lock中175秒の位相差はσ 20 ns、最大62 ns。途中で見つかったfirmwareの不具合3件（測位後のRMCが長すぎて捨てられる、TCXO偏差の換算が1000倍、空の秒を数えてgoodが0に戻る）は修正済み（[試験記録](../../firmware/test_results/2036324356305018000E0038/summary.md)） |
 
-## EasyEDA入力前の必須確認
+## 初回試作の発注前チェック（履歴）
+
+次の3つのリストは、初回試作の発注（2026-09-06）までに使ったものである。確認の記録は[`../../pcb_review/`](../../pcb_review/)のround1～3にあり、チェック欄は当時から更新していない。発注版に残った不一致はOI-016にまとめた。次版の発注前に、この3つのリストを見直して使う。
+
+### EasyEDA入力前の必須確認
 
 - [ ] MCU symbolのpin番号を[`pin_assignment.md`](./pin_assignment.md)の表と1本ずつ突き合わせる。**旧版の表はpin 1～32と40～41が実物と不一致だったため、表を信用してsymbol確認を省略しない。**
 - [ ] pin 8=VDD、pin 9=VSS、pin 12=PF2-NRSTであることを確認する。
@@ -40,7 +47,7 @@
 - [ ] 解決済みOI-002/OI-004/OI-005/OI-006/OI-007/OI-008/OI-009/OI-010/OI-011/OI-012/OI-013と、未解決OI-014の結果を反映する。
 - [ ] U2=C22434890、U14=C544337、C11/C12/C13、R5/R6/R7/R8を配置し、旧C48677994/C51822852/C51966238およびU15/`+2V8_CLK`を配置しない。
 
-## EasyEDA設計後の確認
+### EasyEDA設計後の確認
 
 - [ ] symbol、footprint、pad番号を各メーカーの推奨land patternと照合する。
 - [ ] U7/U8/U12だけでJ3～J8の全12出力を構成し、U7C/U7DがJ4へ接続されていることを確認する。
@@ -50,7 +57,7 @@
 - [ ] ERC/DRCを実行し、意図を記録した除外以外をゼロにする。
 - [ ] EasyEDA project archive、schematic PDF、BOM、CPL、Gerberを保存する。
 
-## 発注前の確認
+### 発注前の確認
 
 - [ ] JLCPCBの在庫、予約可能数、Basic/Promotional/Extended区分、assembly fixture費用を再確認する。
 - [ ] F1 DNP、D1 `SMF6.0A` / C19077499とR3実装の初回variantがBOM/CPLへ反映され、R36が`IMU_TX_OE_N` pull-upであることを確認する。
@@ -67,7 +74,7 @@
 - [x] DS13560 Table 44の`ACC_HSI16`。DR-015の結論は変更なし（ダイ温度1 K変化で約36 ms）。
 - [x] DS13560 Table 12 note 4。対象はPA8/PB15/PD0/PD2で、PB1/PB2/PC5は対象外。DR-002適合。
 - [x] `PWR_CR2`の`PVM_VDDIO2`。reset値は「IOs in isolation mode」。firmwareで`110`を設定する。
-- [x] 空flash判定（RM0444 §2.5.4）。**初回書込み後は電源の入れ直しが必要**（system resetでは`EMPTY`がクリアされない）。
+- [x] 空flash判定（RM0444 §2.5.4）。**初回書込み後は電源の入れ直しが必要**（system resetでは`EMPTY`がクリアされない）。現行firmwareは起動時に`EMPTY`を0にしてresetし直すため、入れ直しは不要になった（BU-06、2026-10-03。[`../../firmware/README.md`](../../firmware/README.md)）。
 - [x] DS13560 Figure 8 / Table 2。旧pin表の出所はN接尾辞品のpinoutだった。**BOMのMPNをN接尾辞なしで固定する。**
 - [x] 74LVC125A Rev 12。VLPの直接保証点がないことを確認し、実測判定へ確定（OI-007/OI-008）。
 - [x] DS3231の`IBATT`と`IOL`（旧DR-031確認。DR-033で部品自体を選定解除）。
@@ -81,8 +88,10 @@
 
 ## 試作合否試験
 
+各項目の試験IDと手順は[`../../firmware/test_plan.md`](../../firmware/test_plan.md)、基板ごとの結果は[`../../firmware/test_results/`](../../firmware/test_results/)の`summary.md`にある。
+
 - [ ] J4 PPS/NMEAを各1.5 kOhmでGNDへ負荷し、High >3.0 V、Low <1.2 Vを全基板で確認する。
-- [ ] J4接続前にVLP-32C側GPS PULSE / GPS RECEIVE端子の開放電圧を測定し、5 Vへのpull-upがないことを確認する（DR-024）。
+- [x] VLP-32C側GPS PULSE / GPS RECEIVE端子の開放電圧を測定し、5 Vへのpull-upがないことを確認する（DR-024）。2026-10-10、どの端子も0 Vまたは浮遊で、pull-upはない。浮遊の端子は、本基板の出力がHigh-Zの間（起動直後、step中、`out off`）入力が定まらない。そのときVLP-32CがPPSやNMEAを誤って受けないかを、SY-02で確かめる。
 - [ ] VLP-32C実機でPPS lock、反転NMEA decode、UTC +1秒を確認する。
 - [ ] Mid-360とVLP-32Cがholdover中のRMC=`V`でtimestamp追従を維持するか確認する。
 - [ ] 0～40 ℃でC22434890/U14を使用し、GNSS消失後5分の時刻誤差が1 ms以下であることを確認する。仕様上の±1.5 ppmをpeak-to-peak適用したTCXO寄与は0.900 ms、48 MHz timer量子化は0.00625 ms、その他の許容は0.09375 ms以下であり、公開仕様だけでは十分なmarginを保証できない。

@@ -25,7 +25,7 @@
 
 | Ref | 確認が必要な情報 | 参考情報（採用確定ではない） | 状態 |
 |---|---|---|---|
-| J2 | 実際に使用するUM982 carrier/evaluation board型番、UART番号、connector型番/pin | 裸UM982はPPS=pin 34。UART TXはTXD1 pin 17、TXD2 pin 19、TXD3 pin 27の候補があり、設定とcarrier配線で決まる | TBD |
+| J2 | 実際に使用するUM982 carrier/evaluation board型番、UART番号、connector型番/pin | 裸UM982はPPS=pin 34。UART TXはTXD1 pin 17、TXD2 pin 19、TXD3 pin 27の候補があり、設定とcarrier配線で決まる。2026-10-10の試作ハーネスでは、J2 pin 3にUM982のCOM3のTX（115200）をつないで受信できた。最初はUM982側でTXとRXを取り違えていた（OI-017） | UART=COM3は試作で確認。carrier型番・connector・pinはTBD |
 | J3 | 中継基板のconnector型番とpin番号 | Jetson 40-pin headerへの配線とpin割当は中継基板の範囲（DR-062）。J3 pin 4は運用で使わない（DR-061）。2026-10時点のCub_ROSはPPS=pin 32、NMEA=pin 10を前提にしている | TBD |
 | J4 | VLP Interface Box使用有無、terminal/connector方式 | Interface Box使用時は`GROUND`、`GPS PULSE`、`GPS RECEIVE`が候補 | TBD |
 | J5 | 公式splitter cable使用またはM12へ直接接続、mating connector型番 | Mid-360本体はpin 2/3=GND、pin 8=PPS input、pin 10=GPS UART input | TBD |
