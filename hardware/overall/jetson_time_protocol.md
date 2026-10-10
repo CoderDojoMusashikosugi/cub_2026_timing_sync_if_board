@@ -2,7 +2,7 @@
 
 ## 目的
 
-Jetson UARTからSTM32へ時刻を設定・照会するframeを定義する。STM32G0B1 errata ES0548 §2.11.1によりnoisyなRXでdata corruptionが起こり得るため、UART parityだけに依存せずCRC、長さ、sequence、範囲を検証する。
+JetsonからUSB CDC経由でSTM32へ時刻を設定・照会するframeを定義する。CRC、長さ、sequence、範囲を検証する。この検証はtransportがUARTだったときに、STM32G0B1 errata ES0548 §2.11.1（noisyなRXでのdata corruption）を考えて決めたもので、USBへ移した後も変えない（DR-061）。
 
 ## Transport
 

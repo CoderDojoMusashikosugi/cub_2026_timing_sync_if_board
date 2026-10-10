@@ -10,7 +10,7 @@
 | Ref | 接続先 | GH pin 1 | GH pin 2 | GH pin 3 | GH pin 4 |
 |---|---|---|---|---|---|
 | J2 | UM982系 | GND | `GNSS_PPS_IN` | `GNSS_NMEA_RX_IN` | - |
-| J3 | Jetson | GND | `JETSON_PPS_OUT` | `JETSON_TX_OUT` | `JETSON_RX_IN` |
+| J3 | Jetson用中継基板 | GND | `JETSON_PPS_OUT` | `JETSON_TX_OUT` | `JETSON_RX_IN`（運用では未使用） |
 | J4 | VLP-32C | GND | `VLP_PPS_OUT` | `VLP_TX_OUT` | - |
 | J5 | Mid-360 | GND | `MID360_PPS_OUT` | `MID360_TX_OUT` | - |
 | J6 | Spresense IMU level board | GND | `IMU_PPS_OUT` | `IMU_TX_OUT` | - |
@@ -26,7 +26,7 @@
 | Ref | 確認が必要な情報 | 参考情報（採用確定ではない） | 状態 |
 |---|---|---|---|
 | J2 | 実際に使用するUM982 carrier/evaluation board型番、UART番号、connector型番/pin | 裸UM982はPPS=pin 34。UART TXはTXD1 pin 17、TXD2 pin 19、TXD3 pin 27の候補があり、設定とcarrier配線で決まる | TBD |
-| J3 | Jetson側housing/contact、GND pin選択 | Developer Kit 40-pin headerはpin 7=PPS候補、pin 8=Jetson TX、pin 10=Jetson RX、GNDはpin 6または9 | TBD |
+| J3 | 中継基板のconnector型番とpin番号 | Jetson 40-pin headerへの配線とpin割当は中継基板の範囲（DR-062）。J3 pin 4は運用で使わない（DR-061）。2026-10時点のCub_ROSはPPS=pin 32、NMEA=pin 10を前提にしている | TBD |
 | J4 | VLP Interface Box使用有無、terminal/connector方式 | Interface Box使用時は`GROUND`、`GPS PULSE`、`GPS RECEIVE`が候補 | TBD |
 | J5 | 公式splitter cable使用またはM12へ直接接続、mating connector型番 | Mid-360本体はpin 2/3=GND、pin 8=PPS input、pin 10=GPS UART input | TBD |
 | J6 | 別基板のconnector型番とpin番号 | 本基板は3.3 VのGND/PPS/NMEAまでを提供 | TBD |

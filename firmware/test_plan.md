@@ -118,7 +118,7 @@ DR-061で決めた項目:
 |---|---|---|
 | PC（Python 3、pytest、pyserial、pyOCDまたはOpenOCD、STM32CubeProgrammer、dfu-util） | 自動試験、書込み、register読出し | 必須 |
 | SWD probe（ST-LINK V2/V3）とTP1～TP5用のpogo/clip | 書込み、復旧、register監査 | 必須 |
-| 3.3 V USB-UART ×4以上 | J2へのNMEA注入、Jetsonエミュレータ、J7/J8、TX出力の受信 | 必須 |
+| 3.3 V USB-UART ×4以上 | J2へのNMEA注入、J3 RX経路の受信試験（UA-01）、J7/J8、TX出力の受信 | 必須 |
 | logic analyzer（8 ch以上、25 MS/s以上） | 6系統TXとPPSの時間関係 | 必須 |
 | oscilloscope（4 ch、帯域200 MHz以上）、1 pF以下のactive probe | PF0 24 MHzのduty/jitter、出力波形、LSE振幅 | 必須（active probeはLSE試験だけ） |
 | time interval counter、またはT-03 PPS timestamper | PPS間隔・位相差の長時間記録 | 必須 |
@@ -137,7 +137,7 @@ DR-061で決めた項目:
 | T-01 | GNSSエミュレータ | 小型MCU board（Nucleo、RP2040等）でPPS + NMEAを生成する。日時を任意に設定でき、PPS欠落・glitch・二重パルス、NMEAのchecksum異常・途中切れ・`V`・時刻飛び、周波数offset、位相stepを注入できる。実GNSSでは作れない日付境界と異常系を決まった手順で再現するために使う | P3 |
 | T-02 | GNSSゲート治具 | UM982とJ2の間に3.3 V buffer（`74LVC1G125`等、UM982側の3.3 Vで給電）を入れ、PCからPPS/NMEAを個別に切断・復帰させる。gate前のPPSは真値としてT-03とscopeへ分岐する。**hot-plug禁止の運用条件を守ったままGNSS喪失を作るための治具**。切断中のJ2入力は基板のR14/R15 biasでPPS Low、NMEA idle Highになる | P5 |
 | T-03 | PPS timestamper | 真値GNSS PPSと基板出力PPS（TP6または各コネクタpin 2）の全edgeを記録し、間隔・パルス幅・位相差を算出して、短パルス・二重パルス・欠落を自動判定する。RP2040 PIO（8 ns分解能）またはtime interval counterで実現する | P3 |
-| T-04 | Jetson protocolクライアント | Python実装。`GET_STATUS`/`SET_TIME`/`FORCE_SET_TIME`と、bit反転・byte欠落/追加・切断・timeout・CRC不一致の注入。Jetson側実装の参照にもする | P3 |
+| T-04 | Jetson protocolクライアント | Python実装（[`tools/jetson_time.py`](./tools/jetson_time.py)）。USB CDC interface 2へつなぐ。`GET_STATUS`/`SET_TIME`/`FORCE_SET_TIME`と、bit反転・byte欠落/追加・切断・timeout・CRC不一致の注入。Jetson側実装の参照にもする | P3 |
 | T-05 | NMEA受信・検証器 | 6系統のTXを同時に受信し、checksum、status、時刻の連続性、PPSとの時間関係を検証する。VLPは反転信号を受けられるadapterまたはlogic analyzerの反転decodeで読む | P3 |
 | T-06 | HIL runner | pytestで基板CDC、T-01～T-05、USB電源制御をまとめて動かし、結果を§7の形式で保存する | P2から段階的に |
 | T-07 | 治具類 | 測定用ハーネス、loopback（pin 3→pin 4）、中点bias（3V3を100 kOhm/100 kOhmで分圧、High-Z/Low/Highを見分ける）、1.5 kOhm負荷 | P2 |
@@ -168,9 +168,9 @@ UM982 + antenna ──> T-02 gate治具 ──PPS/NMEA──> J2
        │（gate前のPPS = 真値）
        └──────────────> T-03 timestamper / oscilloscope <── J3～J8 pin 2、TP6
 T-01 GNSSエミュレータ ──（T-02の代わりにJ2へ接続）
-PC ─ USB（CDC/DFU/給電、USB電源制御経由）──> J1
+PC ─ USB（CDC console、CDC Jetson protocol（T-04）、DFU、給電。USB電源制御経由）──> J1
 PC ─ ST-LINK ──> TP1～TP5
-PC ─ USB-UART（T-04）──> J3 pin 3/4
+PC ─ USB-UART ──> J3 pin 4（受信経路の試験、UA-01）
 PC ─ USB-UART / logic analyzer（T-05）<── J3～J8 pin 3
 ```
 
@@ -324,7 +324,7 @@ L1（UT）はP1と並行して始め、P3開始までに全項目を合格させ
 
 ### 5.9 Jetson protocol（JP）
 
-T-04を使ってJ3から行う。
+T-04を使ってUSB（J1）のCDC interface 2から行う（DR-061）。
 
 | ID | 項目 | 方法 | 合否基準（出典） | 対象 |
 |---|---|---|---|---|
@@ -363,7 +363,7 @@ T-04を使ってJ3から行う。
 
 | ID | 項目 | 方法 | 合否基準（出典） | 対象 |
 |---|---|---|---|---|
-| SY-01 | Jetson | 40-pin header pin 7のPPSを`pps-gpio`で受け`ppstest`で確認、chronyのPPS refclock、UART 115200でT-04相当のclientを動かす | PPSを毎秒受信し、SET/GETが動作する（R-008、R-010） | 代表 |
+| SY-01 | Jetson | 中継基板を経由してJ3のPPSとNMEAをJetsonへ入れる。Jetson側の設定はCub_ROSの`scripts/install_host_settings.sh`による（2026-10時点はPPS=`/dev/pps1`、NMEA=`/dev/ttyTHS1` 9600 baud、NTPsec）。`ppstest`でPPSを、`ntpq -pn`で同期を確認する。USB CDC interface 2でT-04相当のclientを動かす | PPSを毎秒受信し、NTPsecがGNSS（`.GPS.`）へ同期する。SET/GETが動作する（R-008、R-010） | 代表 |
 | SY-02 | VLP-32C | **接続前に**VLP側GPS入力端子の開放電圧を測る。接続後にPPS lock、反転NMEAのdecode、UTC +1秒を確認する。holdover中（RMC=V）のtimestampを記録する | 5 Vへのpull-upがない（DR-024）。PPS lock、時刻が+1秒込みで一致。RMC=V時の挙動を記録（open_issues） | 代表 |
 | SY-03 | Mid-360 | Livox Viewer/SDKで時刻同期状態とtimestampを確認する。holdover中も確認する | GPS同期が成立する。RMC=V時の挙動を記録（open_issues） | 代表 |
 | SY-04 | Spresense level board | J6からのPPS/NMEAを別基板側で受信する | 受信できる（R-009の範囲内で3.3 V出力まで） | 代表 |

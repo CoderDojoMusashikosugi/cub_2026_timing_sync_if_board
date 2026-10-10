@@ -1,8 +1,8 @@
 # GPSタイミング同期インターフェース基板 設計書
 
 - 文書状態: 回路設計ベースライン確定 / 機構条件と実機検証結果待ち
-- 更新日: 2026-08-15
-- 文書版: 0.30
+- 更新日: 2026-10-10
+- 文書版: 0.37
 - 製造先: JLCPCB PCBA
 - EDA: EasyEDA Pro
 - 文書種別: 最終設計の正本。検討経緯は[`considerations.md`](./considerations.md)、現在の未解決事項は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)に分離する
@@ -24,7 +24,7 @@
 | R-005 | JLCPCB PCBAを使用し、低コストを優先する | 確定 |
 | R-006 | Basic Parts / Promotional Partsを可能な限り優先する | 確定 |
 | R-007 | UM982は外部モジュールとし、GHコネクタ経由でPPS/NMEAを入力する | 確定 |
-| R-008 | Jetson Orin Nano公式Developer Kitの40-pin headerへ接続する | 確定 |
+| R-008 | Jetson Orin Nano公式Developer Kitの40-pin headerへ、別の中継基板を経由して接続する | 確定 |
 | R-009 | Spresenseのレベルシフトは別基板で行い、本基板のスコープ外とする | 確定 |
 | R-010 | Jetsonからデバッグ用時刻を受信し、基板時刻とRTCを初期化できる | 確定 |
 | R-011 | 時刻源の優先順位をGNSS、Jetson、RTCの順とする | 確定 |
@@ -70,10 +70,10 @@
 
 ### 3.4 Jetson Orin Nano
 
-- 公式Developer Kit (P3768 carrier) の40-pin expansion headerへ接続する。
-- UART1はpin 8がJetson TX、本基板から見たRX入力、pin 10がJetson RX、本基板から見たTX出力。全信号は3.3 V系。
-- PPS入力はpin 7 (GPIO09) を使用する。GPIO/PPSドライバ設定はJetson側ソフトウェア設計で確認する。
-- UARTは115200 baud、8N1とし、Jetsonから時刻設定・状態確認を行う双方向制御ポートとして使用する。CRC付きframe仕様は[`../hardware/overall/jetson_time_protocol.md`](../hardware/overall/jetson_time_protocol.md)を正とする。
+- J3は別の中継基板へ接続し、中継基板が公式Developer Kit (P3768 carrier) の40-pin expansion headerへ配線する。どのheader pinへつなぐかは中継基板の範囲とし、本書では定めない（DR-062）。
+- J3は出力専用とし、pin 2からPPS、pin 3からNMEA（GPRMC、9600 baud、8N1。§4.2）を出す。全信号は3.3 V系。J3 pin 4の受信回路は残るが運用では使わない（DR-061）。
+- 時刻設定・状態確認の双方向通信はUSB（J1）のCDC interface 2で行う。CRC付きframe仕様は[`../hardware/overall/jetson_time_protocol.md`](../hardware/overall/jetson_time_protocol.md)を正とする（DR-061）。
+- 参考: 2026-10時点のCub_ROS（Cub4）では、Jetson側はPPSをpin 32（GPIO07、`/dev/pps1`）、NMEAをpin 10（`/dev/ttyTHS1`、9600 baud）でNTPsecへ入れる設定である（Cub_ROS `scripts/install_host_settings.sh`）。
 
 資料: [Jetson Orin Nano Developer Kit Carrier Board Specification](https://developer.nvidia.com/downloads/assets/embedded/secure/jetson/orin_nano/docs/jetson_orin_nano_devkit_carrier_board_specification_sp.pdf)
 
@@ -99,7 +99,7 @@ flowchart LR
     FAN --> VLP[VLP-32C]
     FAN --> MID[Mid-360]
     FAN --> SPR[Spresense]
-    JET -->|time set / status command| MCU
+    JET <-->|USB CDC: time set / status| USB
     MCU -->|dedicated UART| JBUF[Jetson output buffer]
     JBUF --> JET
     MCU -->|dedicated UART| MBUF[Mid output buffer]
@@ -171,7 +171,7 @@ flowchart LR
 ### 4.5 USBデバッグインターフェース
 
 - MCUのnative USB Full-Speed deviceをUSB Type-CのD+/D-へ接続する。
-- 通常動作時はUSB CDC ACMを実装し、ログ表示、時刻設定、状態取得、テスト出力制御に使う。
+- 通常動作時はUSB CDC ACMを2つ実装する。interface 0はconsoleとしてログ表示、状態取得、テスト出力制御に使い、interface 2はJetsonとの時刻protocol（§3.4）に使う。
 - 内蔵system bootloaderのUSB DFUでファームウェアを書き込めるよう、BOOT操作とRESET操作を基板上で可能にする。
 - ファームウェア異常時のsource-level debugに備え、SWDIO、SWCLK、NRST、3V3、GNDのテストパッドを残す。
 - PA6には唯一の汎用firmware event traceとしてTP9 `TP_FW_TRACE`を残す。SWOではなくGPIO pulse観測用とし、通常firmwareではanalog/no-pull、明示的なdebug buildまたは設定時だけ既定LowのGPIO出力として有効化する。製品機能はTP9へ依存させない。
@@ -188,7 +188,7 @@ flowchart LR
 |---|---|---:|---|
 | J1 | USB Type-C | USB2 Type-C | VBUS, GND, `USB_DP_CONN`, `USB_DN_CONN`, CC1, CC2 |
 | J2 | 外部UM982 | 3 | 1:GND, 2:`GNSS_PPS_IN`, 3:`GNSS_NMEA_RX_IN` |
-| J3 | Jetson Developer Kit | 4 | 1:GND, 2:`JETSON_PPS_OUT`, 3:`JETSON_TX_OUT`, 4:`JETSON_RX_IN` |
+| J3 | Jetson（中継基板経由） | 4 | 1:GND, 2:`JETSON_PPS_OUT`, 3:`JETSON_TX_OUT`, 4:`JETSON_RX_IN` |
 | J4 | VLP-32C | 3 | 1:GND, 2:`VLP_PPS_OUT`, 3:`VLP_TX_OUT` |
 | J5 | Mid-360 | 3 | 1:GND, 2:`MID360_PPS_OUT`, 3:`MID360_TX_OUT` |
 | J6 | Spresense IMU用レベルシフト基板 | 3 | 1:GND, 2:`IMU_PPS_OUT`, 3:`IMU_TX_OUT` |
@@ -197,8 +197,8 @@ flowchart LR
 
 J2/J3/J7/J8の入力ラベルは直列抵抗よりU4側に置き、コネクタから直列抵抗までの短い区間は無名netとする。USBはU11を境にコネクタ側`USB_DP_CONN`/`USB_DN_CONN`とMCU側`USB_DP`/`USB_DN`へ分割し、保護素子を経由する配線を固定する。
 
-- J3の相手側はJetson header pin 6または9 (GND)、pin 7 (GPIO09/PPS)、pin 8 (UART1_TXD)、pin 10 (UART1_RXD)へ分岐するハーネスとする。
-- Jetson側40-pin headerへ基板を直接搭載せず、GHケーブルだけで接続する。
+- J3の相手は別の中継基板とし、Jetson 40-pin headerへの配線とpin割当は中継基板で管理する（DR-062）。J3 pin 4は運用では使わない（§3.4）。
+- 本基板をJetson側40-pin headerへ直接搭載しない。中継基板とはGHケーブルで接続する。
 - J7/J8は3.3 V UART専用とし、電源pinを設けない。外部機器への給電が必要になった場合は別コネクタまたは別基板で対応する。
 - J2～J8はCJT A1257シリーズをJLCPCBでPCBA実装する。発注前にassembly fixture費用と在庫を再確認する。
 - 相手機器側connector/pin、使用UART、線色、線長はTBDとし、試作ハーネス製作前に[`../hardware/overall/harness_pinout.md`](../hardware/overall/harness_pinout.md)のTODOと導通検査表を完成させる。TBDを推測で埋めない。
@@ -207,7 +207,7 @@ J2/J3/J7/J8の入力ラベルは直列抵抗よりU4側に置き、コネクタ�
 
 | 接続先 | PPS | NMEA | 電気レベル | 固有処理 | 状態 |
 |---|---:|---:|---|---|---|
-| Jetson Orin Nano | 1 | 双方向UART 1 | 3.3 V | pin 7 PPS、pin 8/10 UART | 基本仕様確定 |
+| Jetson Orin Nano（中継基板経由） | 1 | 1 | 3.3 V | J3は出力専用。時刻設定・状態確認はUSB CDC interface 2 | 基本仕様確定 |
 | VLP-32C | 1 | 1 | 3.3 V試作出力 | NMEA +1秒、UART反転。High >3.0 V @ 2 mAはJ4実測で合否判定 | 機能・GH互換3 pin確定、電圧は試作検証 |
 | Mid-360 | 1 | 1 | 3.3 V TTL | 9600 8N1、GPRMC/GNRMC | 電気仕様・GH互換3 pin確定 |
 | Spresense IMU用レベルシフト基板 | 1 | 1 | 3.3 V | `IMU_*`はCXD5602PWBIMU1J向け系統名。レベル変換はスコープ外 | 基本仕様確定 |
@@ -219,9 +219,9 @@ J2/J3/J7/J8の入力ラベルは直列抵抗よりU4側に置き、コネクタ�
 ### 6.1 MCUへ割り当てる機能
 
 - UM982受信用UART x1。
-- Jetson制御用の双方向UART x1。
 - Jetson、VLP-32C、Mid-360、Spresense、予備2系統の独立TX、合計6系統。
-- Jetsonと予備2系統のRX、UM982受信用RX。
+- Jetsonと予備2系統のRX、UM982受信用RX。Jetson RX（J3 pin 4）は運用では使わず、受信経路と折返しの試験（UA-01、UA-03）だけに使う（DR-061）。
+- Jetsonとの時刻protocol用のUSB CDC（§4.5）。
 - VLP-32C用UARTはUSARTの`TXINV`で反転する。
 - PPS入力キャプチャとPPS生成を1個の32-bitタイマー（TIM2）の2チャネルで実現する。
 - UTC日時処理、NMEA parser/checksum、ウォッチドッグ、brown-out reset。
