@@ -1,0 +1,3 @@
+# EasyEDAが出力するPDFは文字だけで書かれているため、gitがtextと判定して改行を変換する
+# （Windowsのcore.autocrlf=trueではcheckout時にCRが入り、PDF内部のoffsetがずれる）。binaryとして扱う。
+*.pdf binary
