@@ -5,7 +5,7 @@
 ## 起動順序
 
 1. 全`OE_N`を外付けpull-upとGPIO出力HighでHigh-Zに保つ。
-2. reset flagをclearする前に`BORRSTF`を保存し、RTC-domain signature/version、両CRC、`INITS`、`RCC_BDCR`、calendar、SSRを検証する。
+2. reset flagをclearする前に`BORRSTF`を保存し、RTC-domain signature/version、両CRC、`INITS`、`RCC_BDCR`、calendar、SSRを検証する。（現在のfirmwareは検証の前の初期化でreset flagをclearしており、保存した`BORRSTF`を判定に使っていない）
 3. 不整合ならBDRSTをset、read-back、clearし、`RTC_INVALID`とする。CR2032使用時はsoftware erase/CRC手順を省略しない。
 4. `PVM_VDDIO2=110`、UCPD dead-battery strobe、VREFBUF無効を設定する。
 5. U2/U14の安定化に電源投入後5 ms以上待ち、Voltage Range 1、`VOSF=0`、Flash 2 wait state、HSE bypass/PLL、HSE CSSの順にclockを設定する。
@@ -18,8 +18,8 @@
 - HSE=24 MHz、PLLM=2、PLLN=16、PLLR=4、SYSCLK/TIM2=48 MHz
 - TIM2はARR=47999999、ARPE有効、CCR2=4800000。周波数・位相steeringはARRだけで行う
 - GNSS PPSはU4Aで反転するためCH1 falling-edge capture
-- PLLQ=4でUSB 48 MHzを生成する。HSI48+CRSへの依存を削除する
-- HSE/PLL/CSS faultは全出力High-Z、`FAULT_CLOCK`。HSIは診断専用
+- PLLQ=4でUSB 48 MHzを生成する。HSI48+CRSへの依存を削除する。ただし現在のfirmwareは、clock異常の診断modeに限り、consoleを使えるようにUSBをHSI48+CRSで動かす（[`../../firmware/test_plan.md`](../../firmware/test_plan.md) P-20、判断待ち）
+- HSE/PLL/CSS faultは全出力High-Z、`FAULT_CLOCK`。HSIは診断専用。現在のfirmwareが動作中に検出するのはHSE CSSだけで、検出するとresetして次の起動を`FAULT_CLOCK`にする。PLLの異常は起動時だけ確かめる
 
 ## RTC・backup domain
 
@@ -36,7 +36,7 @@
 - TP9 `TP_FW_TRACE`は任意イベントの時刻観測用であり、製品機能、fault通知、PPS生成を依存させない。SWOとしては使用しない
 - GNSS PPS/NMEAを5回連続検証してlockする
 - GNSS喪失時は最後に検証済みのARR補正を保持し、RMC=`V`で出力する
-- 復帰時の補正は±100 us/s以内とし、短パルス、二重パルス、欠落、UTC逆行を発生させない
+- 復帰時の補正は±100 us/s以内とし、短パルス、二重パルス、欠落、UTC逆行を発生させない。ただし、RTC・Jetson由来の時刻から1 ms超ずれていた場合は出力をHigh-Zにしてstepし、GNSS由来の時刻から100 ms超ずれていた場合は`FAULT`にする（[`time_source_state_machine.md`](./time_source_state_machine.md)「GNSS復帰時の合わせ方」、DR-061）
 - GNSS追従中の出力PPS位相差は校正後1 us以内、holdoverは0～40 ℃・5分で1 ms以内
 
 ## Bring-up合否

@@ -1,7 +1,8 @@
 # MCU・信号割当
 
 - 対象MCU: `STM32G0B1RCT6`、LQFP-64（DR-060で旧`STM32G0B1RBT6`から変更。**pin割当は一切変更なし**）
-- 更新日: 2026-09-06（DR-060のMCU品番変更を反映。pin表の内容はDR-055のPA6 firmware trace pad、DR-053のclock bias値のまま変更なし）
+- 更新日: 2026-10-17（発注版との照合結果を反映。pin表の内容はDR-055のPA6 firmware trace pad、DR-053のclock bias値のまま変更なし）
+- 発注版との照合: 2026-09-06に発注した基板の回路図netlist（[`../rev1/`](../rev1/)）で、MCU全pin、J2～J8、出力buffer 12 channel、U4のbiasが本書と一致することを確認した。ただし回路図ではnet名の付け方が一部違う。本書の`VBAT_RTC`、`VREF_CLK`、未使用pinの`NC_*`は回路図では無名のnetであり、`CLK_24M`はR8のU14側のnetで、R8のPF0側は無名である
 - 状態: 2026-08-11にDR-012として物理pin番号を全面修正した。**旧版のpin 1～32および40～41は実物と不一致であり使用してはならない。** GPIO名とAF番号は旧版のまま正しい
 - 根拠: **ST `STM32G0B1xB/xC/xE` datasheet DS13560 Rev 6 のFigure 8（GP版pinout）およびTable 12（LQFP64-GP列）** で全pin確認済み。補助としてCubeMX pin database `mcu/STM32G0B1R(B-C-E)Tx.xml`、ST生成pinctrlデータ（AF番号）、CMSISヘッダ`stm32g0b1xx.h`（timer bit幅）、KiCad symbol library
 - **品種の固定: 本表はGP版（`_RxT`、N接尾辞なし）専用である。** N接尾辞品`STM32G0B1RCT6N`（`_RxTxN`）はpin 40/41が`VSS`/`VDDIO2`で、PD8/PD9が存在しない非互換pinoutである（DS13560 Figure 8、Table 2）。BOMのMPNをN接尾辞なしで固定し、差し替えない。本設計はUCPDを使用しないためGP版で不足はない
@@ -19,7 +20,7 @@ LQFP-64再割当へ適用した確定事項:
 - 3.3 V PPS/UART出力の`74LVC125A`はU7/U8/U12の3個とし、J3～J8の全12出力を担当する。U7C/U7DをVLP-32CのPPS/NMEAへ使用する。
 - VLP向け論理反転はUSARTの`TXINV`で行う。旧VLP専用U5/U6 driverと`+4V7_VLP`は使用しない。U2のclipped-sine出力はU14 comparatorで3.3 V CMOS化しPF0へ入力する。専用clock LDOは使用しない。
 - VLP公式条件はHigh >3.0 Vかつ<5.0 V、Low <1.2 V、High時2 mA供給である。3.3 V `74LVC125A`にはこの組合せの直接min保証点がないため、J4を2 mA負荷で実測して試作合否を判定する。
-- GH信号ESD footprintは設けない。通常出力は33 Ohm、VLPの2出力は10 Ohm、HC14入力は4.7 kOhmを初期値とする。
+- GH信号ESD footprintは設けない。通常出力は33 Ohm、VLPの2出力は10 Ohm、U4入力は4.7 kOhmを初期値とする。
 - USB ESDとD1 TVSは実装し、F1 PTCは初回DNPとする。F1と並列のR3 `0603WAF0000T5E` / C21189を実装してVBUSを導通させる。
 - DR-002対応として、`PPS_OE_N`はPB1、`IMU_TX_OE_N`はPB2へ割り当てる。PB1/PB2はDS13560 Table 12 note 4の条件付きreset pull-down対象外であり、reset中は外付け100 kOhm pull-upにより74LVC125AをHigh-Zへ固定する。
 - DR-014対応として、生成PPSはPA6/TIM3_CH1ではなく**PC5/TIM2_CH2**から出力する。TIM3は16-bitで48 MHzから高分解能の1 Hzを生成できないため、32-bitのTIM2へ集約する。
@@ -64,9 +65,9 @@ J1 VBUS -> VBUS_RAW -> (F1 || R3) -> VBUS_PROTECTED -> U3 / board loads
 | 17 | PA0 | USART4_TX (AF4) | `VLP_TX_MCU` | TXINV有効、U7D -> J4 pin 3 |
 | 18 | PA1 | GPIO | `NC_PA1` | 未使用、回路図上NC。状態はJetson `GET_STATUS`とstatus LEDで通知する |
 | 19 | PA2 | USART2_TX (AF1) | `JETSON_TX_MCU` | U7B -> J3 pin 3 |
-| 20 | PA3 | USART2_RX (AF1) | `JETSON_RX_MCU` | U4C HC14出力、RXINV有効 |
+| 20 | PA3 | USART2_RX (AF1) | `JETSON_RX_MCU` | U4C出力、RXINV有効 |
 | 21 | PA4 | USART6_TX (AF3) | `IMU_TX_MCU` | U8D -> J6 pin 3。Spresense IMU向け。**`TT` = 3.6 V耐圧のみ** |
-| 22 | PA5 | TIM2_CH1_ETR (AF2) | `GNSS_PPS_MON` | U4A HC14出力、falling-edge capture。**`TT` = 3.6 V耐圧のみ** |
+| 22 | PA5 | TIM2_CH1_ETR (AF2) | `GNSS_PPS_MON` | U4A出力、falling-edge capture。**`TT` = 3.6 V耐圧のみ** |
 | 23 | PA6 | GPIO | `TP_FW_TRACE` | **TP9へ接続する唯一の汎用firmware trace出力。SWOではない。通常firmwareではanalog/no-pull、debug時だけGPIO出力** |
 | 24 | PA7 | GPIO | `STAT_LED_N` | status LED |
 | 25 | PC4 | GPIO | `NC_PC4` | 未使用、回路図上NC。VBAT monitorを採用する場合の候補（OI-005） |
@@ -75,7 +76,7 @@ J1 VBUS -> VBUS_RAW -> (F1 || R3) -> VBUS_PROTECTED -> U3 / board loads
 | 28 | PB1 | GPIO | `PPS_OE_N` | U7/U8/U12のPPS channel共通enable、100 kOhm pull-up |
 | 29 | PB2 | GPIO | `IMU_TX_OE_N` | Spresense IMU TX buffer enable、100 kOhm pull-up |
 | 30 | PB10 | GPIO | `NC_PB10` | 未使用、回路図上NC。TIM2_CH3は解放 |
-| 31 | PB11 | USART3_RX (AF4) | `GNSS_NMEA_RX_MCU` | U4B HC14出力、RXINV有効 |
+| 31 | PB11 | USART3_RX (AF4) | `GNSS_NMEA_RX_MCU` | U4B出力、RXINV有効 |
 | 32 | PB12 | GPIO | `JETSON_TX_OE_N` | Jetson TX buffer enable、100 kOhm pull-up |
 | 33 | PB13 | GPIO | `VLP_TX_OE_N` | VLP TX buffer enable、100 kOhm pull-up |
 | 34 | PB14 | GPIO | `MID360_TX_OE_N` | Mid-360 TX buffer enable、100 kOhm pull-up |
@@ -83,10 +84,10 @@ J1 VBUS -> VBUS_RAW -> (F1 || R3) -> VBUS_PROTECTED -> U3 / board loads
 | 36 | PA8 | GPIO | `NC_PA8` | 未使用、回路図上NC。条件付きreset pull-down対象のため安全制御には使用しない |
 | 37 | PA9 | USART1_TX (AF1) | `AUX1_TX_MCU` | U12B -> J7 pin 3 |
 | 38 | PC6 | LPUART2_TX (AF3) | `AUX2_TX_MCU` | U12D -> J8 pin 3 |
-| 39 | PC7 | LPUART2_RX (AF3) | `AUX2_RX_MCU` | U4E HC14出力、RXINV有効 |
+| 39 | PC7 | LPUART2_RX (AF3) | `AUX2_RX_MCU` | U4E出力、RXINV有効 |
 | 40 | PD8 | GPIO | `NC_PD8` | 未使用、回路図上NC。**電源へ接続しない** |
 | 41 | PD9 | GPIO | `NC_PD9` | 未使用、回路図上NC。**電源へ接続しない（旧版はVDDIO2と誤記）** |
-| 42 | PA10 | USART1_RX (AF1) | `AUX1_RX_MCU` | U4D HC14出力、RXINV有効 |
+| 42 | PA10 | USART1_RX (AF1) | `AUX1_RX_MCU` | U4D出力、RXINV有効 |
 | 43 | PA11 | USB_DM | `USB_DN` | U11 MCU側 |
 | 44 | PA12 | USB_DP | `USB_DP` | U11 MCU側 |
 | 45 | PA13 | SWDIO | `SWDIO` | SWD pad TP1 |
@@ -152,6 +153,8 @@ DS13560 Table 11の`_s`は「I/O, supplied from VDDIO2 only」を意味する。
 
 ### EasyEDA入力時の必須確認
 
+初回試作では、発注版の回路図netlistで下の4点を含む全pinを確認済みである。次版で部品を置き直すときも同じ確認を行う。
+
 EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpin番号と本表を1本ずつ突き合わせる。** 旧版の表はpin 1～32および40～41が実物と不一致だったため（DR-012）、表を信用してsymbol確認を省略してはならない。特に次の4点を確認する。
 
 1. pin 8がVDD、pin 9がVSSであること。pin 12がPF2-NRSTであること。
@@ -176,7 +179,7 @@ EasyEDA/LCSCが提供するMCU symbolを配置した直後に、**symbol上のpi
 
 | TIM2 channel | Pin | 用途 |
 |---|---|---|
-| CH1 (AF2) | PA5 / pin 22 | GNSS PPS input capture（HC14反転のためfalling edge） |
+| CH1 (AF2) | PA5 / pin 22 | GNSS PPS input capture（U4で反転するためfalling edge） |
 | CH2 (AF2) | PC5 / pin 26 | 生成PPS output compare / PWM |
 | CH3 | 使用しない | PB10は未使用GPIO |
 | CH4 | 使用しない | PA3/PB11はUSART2_RX/USART3_RXが使用する |
@@ -335,7 +338,7 @@ BT1 pin 1 / CR2032- -> GND
 - X1のCL=7 pFに対し基板寄生を約2 pFと仮定し、C14/C15は10 pFを初期値とする。SC-32SのESR最大70 kOhm、C0 typ 1 pF、CL 7 pFから`gmcrit`は概算0.76 uA/Vとなるため、STM32は`LSEDRV=10`（medium-high、`Gmcritmax` 1.7 uA/V）で使用する。low/medium-lowは不適合、highは過励振を悪化させるため使用しない。
 - 試作では8.2～12 pFを調整するとともに、発振loopへ直列抵抗`RADD`を挿入して`Sf = (RADD + ESR) / ESR >= 3`を0 ℃、40 ℃、CR2032単独給電で確認する。1 pF以下のprobeでOSC_IN側`Vpp`を測定し、`DL = ESR x (pi F Ctot)^2 x Vpp^2 / 2 < 0.5 uW`を確認する。過励振時はdriveを下げられないため水晶を変更する。
 - U2 pin 3→C11→U14 pin 3、およびU14 pin 1→R8→PF0はGND plane上を短く配線する。R8はPF0直近、R5-R7/C11-C13はU14直近へ置く。clock配線のtest padは小型・stub最小とする。
-- X1とC14/C15はPC14/PC15直近へ配置し、X1直下および発振loop内に信号配線を通さない。裏面には他のGND planeからギャップで区別したローカルGND planeを置き、最寄りのMCU GNDへ一点接続する。X1/C14/C15の周囲にはGND guard ringを設ける。PC13はNCとし、その配線も近づけない。
+- X1とC14/C15はPC14/PC15直近へ配置し、X1直下および発振loop内に信号配線を通さない。裏面には他のGND planeからギャップで区別したローカルGND planeを置き、最寄りのMCU GNDへ一点接続する。X1/C14/C15の周囲にはGND guard ringを設ける。PC13はNCとし、その配線も近づけない。**初回試作ではローカルGND planeとguard ringを作っていない**（4層のInner1のGND全面の上にある）。発振loop内に他のnetの配線やviaがない点は満たしている。
 - U2は24 MHz、clipped sine 0.8 Vp-p min、10 kOhm // 10 pF、-30～85 ℃で±1.5 ppm、2.0 mA maxである。U14は2.7～5 V、push-pull出力、7 mV hysteresis、20 ns max propagation delay品である。両部品のsymbol/padを回路図・PCB・現物で照合し、C22434890/C544337以外へ無断代替しない。C48677994/C51822852/C51966238は使用しない。
 - HSE Clock Security Systemを有効化する。HSE/PLL faultでHSIへ切り替わった場合、時刻出力は継続せず全`OE_N`をHighにして`FAULT_CLOCK`へ遷移する。
 
@@ -346,6 +349,7 @@ BT1 pin 1 / CR2032- -> GND
 - SW1/SW2は小型Basic `TS-1088-AR02016` / C720477、SMD 4 x 3 mmを使用する。
 - PA14はSWCLK兼用である。STM32G0B1 errata ES0548 §2.2.8により、debug接続後はprobeを外しただけではBOOT0 sampling状態が戻らない。SWD probeを外し、USBを含む全主電源を切って完全power cycleした後にSW2 + SW1のBOOT操作を行う。
 - option byteを`nBOOT_SEL=0`、`nBOOT1=1`として外部BOOT0とsystem-memory bootを有効化する（AN2606の一般表では`nBOOT_SEL`を`nBOOT0_SEL`と表記）。通常起動はBOOT Low、system-memory USB DFUはSW2を押したままSW1を押して離し、その後SW2を離す。
+- **試験中の2枚はoption byteを変更していない（出荷時の`nBOOT_SEL=1`のまま）。** このためSW2+SW1ではDFUに入れず、DFUへはconsoleの`dfu` commandで移る。Rev Aの基板でoption byteを変更するかは判断待ちである（[`../../firmware/test_plan.md`](../../firmware/test_plan.md) P-22）。
 - PA15の専用`DFU_REQ_N` buttonは設けない。正常firmwareからはUSB CDC commandによるsystem bootloader移行を実装し、firmware異常時はSW1/SW2を使用する。
 - SWD recovery用TP1～TP5（SWDIO、SWCLK、NRST、3V3、GND）は維持する。
 
@@ -359,8 +363,8 @@ BT1 pin 1 / CR2032- -> GND
 未書込みの新品基板は空flash判定（RM0444 §2.5.4、`FLASH_ACR`の`EMPTY` bit）でsystem bootloaderへ入るため、SWD probeなしでもUSB DFUで認識できる。判定はmainフラッシュがboot対象かつ`BOOT_LOCK`未セットのときに行われる。次の順序で立ち上げる。
 
 1. 新品基板をUSBへ接続し、空flash判定によりsystem bootloaderが起動してDFU deviceとして見えることを確認する。DFUで初回firmwareを書き込む。
-2. **書込み後はUSBを抜き差しして電源を入れ直す。** `EMPTY`フラグのクリアにはpower on resetまたは`OBL_LAUNCH`が必要で、**system reset（SW1）では clear されない。** SW1だけを押しても新firmwareは起動せず再びbootloaderへ入る。
-3. option byteを`nBOOT_SEL=0`、`nBOOT1=1`へ設定し、SW2 + SW1によるDFU移行を有効にする。BOOT0はNRSTの立上りedgeでサンプリングされるため、SW2を押したままSW1を押して離す手順が正しい。
+2. **書込み後はUSBを抜き差しして電源を入れ直す。** `EMPTY`フラグのクリアにはpower on resetまたは`OBL_LAUNCH`が必要で、**system reset（SW1）では clear されない。** SW1だけを押しても新firmwareは起動せず再びbootloaderへ入る。ただし現在のfirmwareは起動時に自分で`EMPTY`を0にしてresetし直すので、電源の入れ直しは要らない（[`../../firmware/README.md`](../../firmware/README.md)）。
+3. option byteを`nBOOT_SEL=0`、`nBOOT1=1`へ設定し、SW2 + SW1によるDFU移行を有効にする。BOOT0はNRSTの立上りedgeでサンプリングされるため、SW2を押したままSW1を押して離す手順が正しい。（試験中の2枚では未実施。上記のP-22を参照）
 4. 上記が失敗した場合はTP1～TP5経由のSWDで書き込む。SWD使用後にBOOT+RESETを再試行するときは、probeを外して全主電源を完全power cycleしてから行う。
 
 option byte変更前にTP1～TP5の導通を確認し、`DBGMCU_IDCODE.REV_ID`を記録する。Rev A（`REV_ID=0x1000`）はES0548 §2.2.9の対象で、option byte不整合により`BOOT_LOCK`とRDPが自動設定されると復旧不能になり得る。安定したUSB給電で書込み、option byte reloadとsystem resetが完了するまでUSBを抜かない。

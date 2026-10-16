@@ -1,8 +1,9 @@
 # GPSタイミング同期インターフェース基板 設計書
 
-- 文書状態: 回路設計ベースライン確定 / 機構条件と実機検証結果待ち
-- 更新日: 2026-10-10
-- 文書版: 0.37
+- 文書状態: 初回試作を2026-09-06に発注し、2026-10から実機で試験中 / 機構条件と実機検証結果待ち
+- 更新日: 2026-10-17
+- 文書版: 0.38
+- 発注版の基板: 回路図・PCB図・BOMは[`../hardware/rev1/`](../hardware/rev1/)。外形・層数・テストパッドの面は本書の当初の設計値と違う（§7）
 - 製造先: JLCPCB PCBA
 - EDA: EasyEDA Pro
 - 文書種別: 最終設計の正本。検討経緯は[`considerations.md`](./considerations.md)、現在の未解決事項は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)に分離する
@@ -113,12 +114,12 @@ flowchart LR
 ### 4.1 PPS経路
 
 - 出力PPSはGNSS正常時を含め、常にMCUのハードウェアタイマー出力比較機能で生成する。GNSS PPSは出力源として直接切り替えず、MCUタイマーを規律する基準として使用する。
-- 生成PPSとGNSS PPSキャプチャは32-bitのTIM2へ集約する。生成PPSはPC5/TIM2_CH2、GNSS PPSキャプチャはPA5/TIM2_CH1を使用し、CH3は未使用とする。16-bitのTIM3は1 Hz生成に必要な分解能が不足するため使用しない。詳細は[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)の「PPS/holdoverのtimer構成」を正とする。
+- 生成PPSとGNSS PPSキャプチャは32-bitのTIM2へ集約する。生成PPSはPC5/TIM2_CH2、GNSS PPSキャプチャはPA5/TIM2_CH1を使用し、CH3のpinは未使用とする（firmwareはCH3/CH4をpinなしの比較割込みに使う）。16-bitのTIM3は1 Hz生成に必要な分解能が不足するため使用しない。詳細は[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)の「PPS/holdoverのtimer構成」を正とする。
 - MCUはGNSS PPSをタイマー入力キャプチャで監視し、位相誤差と周波数誤差を推定する。GNSS PPSはU4A `SN74LV14A`で反転するため立下りedgeでキャプチャする。
 - GNSS異常時はPPS生成を継続し、GNSS有効中に学習した24 MHz TCXOの周波数補正値を保持する。TCXOはTIM2のクロック源そのものなので、外部RTCとの周波数比計測は不要である。
 - U2はYXC `OW7EL89CENUYO3YLC-24M` / C22434890を採用する。3.3 V、clipped sine 0.8 Vp-p min、10 kOhm // 10 pF、-30～85 ℃で温度安定度±1.5 ppm、消費電流2.0 mA maxである。C11でAC結合して1.031 Vへbiasし、U14 TI `LMV7219M7X/NOPB` / C544337で3.3 V CMOS化する。U14 OUTをR8経由でPF0/OSC_INへ入力し、STM32はHSE bypass mode、PF1/OSC_OUTは未接続とする。PF0入力は24 MHz、duty 45～55 %を満たすことを試作合否条件とする。
 - GNSS復帰時は正常なPPS/NMEAを5回以上連続受信してから再同期を開始する。出力PPS周期の補正量を1秒当たり±100 usに制限し、PPS間隔を0.999900～1.000100秒の範囲で緩やかにGNSS位相へ戻す。
-- 再同期中も短パルス、二重パルス、パルス欠落、秒の重複・飛越を発生させない。位相差が通常のslewで安全に回復できないほど大きい場合は同期異常として通知する。
+- 再同期中も短パルス、二重パルス、パルス欠落、秒の重複・飛越を発生させない。位相差が通常のslewで安全に回復できないほど大きい場合は、次のとおり扱う（DR-061）。holdover中の時刻がGNSS由来なら、位相差100 ms超または秒の不一致で`FAULT`（全出力High-Z）とする。RTCまたはJetson由来なら、1 ms超または秒の不一致で出力をHigh-Zにしてstepし、2秒正常が続いてから出力を戻す。詳細は[`../hardware/overall/time_source_state_machine.md`](../hardware/overall/time_source_state_machine.md)「GNSS復帰時の合わせ方」。
 - 各PPS出力には個別の直列抵抗を設ける。測定は原則として各コネクタpin 2とpin 1 GNDから行い、信号測定用の恒久テストパッドは生成源`PPS_GENERATED`のTP6、VLP負荷試験用TP7/TP8、PA6の汎用firmware trace用TP9だけとする。初回プロトタイプではGH信号ESD footprint自体を設けず、同一ロボット内・電源OFF中のみ接続という運用条件を適用する。
 
 #### 4.1.1 GNSS PPSに対する遅延・位相差
@@ -130,7 +131,7 @@ flowchart LR
 - STM32G0B1で32-bitのTIM2を48 MHzで動作させた場合の1 tickは約20.833 ns。ARR=47,999,999で1秒周期とし、周期補正の1 LSBは約0.0208 ppmとなる。入力capture同期遅延を含む固定offsetは、実装後に測定してDPLLの位相補正値へ含める。
 - timer output compareでedgeを生成するため、通常のfirmware割込み応答時間はPPS edgeのジッタへ直接加算されない。
 - 設計目標は、GNSS追従安定後の基板コネクタ出力edgeをGNSS入力edgeに対して絶対値1 us以内とする。保証可否は基準クロック構成と実機測定後に判定する。
-- 電源投入後は正常なGNSS PPS/NMEAを5回連続確認するため、GNSS同期済みとしてPPSを有効化するまで約5～6秒を見込む。GNSS復帰時は既存PPSを停止せず、±100 us/秒以内で位相を戻す。
+- 電源投入後は、最初に生成PPSをGNSS PPSへstepで揃えてから、位相差1 us以内のGNSS PPS/NMEAを5回連続確認してPPSを有効化する。屋外の実測では、PPSとRMC=`A`がそろってから約8秒だった。GNSS復帰時は、slewで戻せる範囲（§4.1）なら既存PPSを停止せず、±100 us/秒以内で位相を戻す。
 - ケーブルの伝搬時間は基板コネクタより後段の遅延として別管理する。接続先での同期精度を規定する場合はケーブル長差も校正対象とする。
 
 ### 4.2 NMEA経路
@@ -163,9 +164,9 @@ flowchart LR
 | 3 | 内蔵RTC + TCXO holdover | GNSSとJetsonが無効 | 内蔵RTCの暦とTCXO/TIM2の秒間隔でPPS/NMEAを使用 |
 
 - Jetsonの一回限りのSETコマンドはRTC初期化として扱う。
-- Jetsonを継続時刻源として扱う場合は、時刻更新の有効期限を設け、timeout後はRTCへ戻る。
-- GNSS有効中はJetsonからのSETを拒否するか、RTCを変更せずデバッグ応答だけを返す。
-- 現在使用中の時刻源、最終同期時刻、PPS/NMEA状態、RTC有効性をJetsonから取得できるプロトコルを定義する。RTC有効性は使用する全backup registerのsignature/versionとpayload CRC、RTC-domain configuration CRC、`INITS`、RTCSEL/LSEON/LSERDY/RTCEN、calendar範囲、SSR単調性で判定し、VBAT電圧の実測値とはしない。`RTC_VALID`は起動時の整合性だけを示し、主電源断中のLSE連続動作や電池残量は保証しない。
+- Jetsonを継続時刻源として扱う場合は、時刻更新の有効期限を設け、timeout後はRTCへ戻る。（現在のfirmwareには有効期限がない。[`../firmware/test_plan.md`](../firmware/test_plan.md) P-13）
+- GNSS有効中はJetsonからのSETを拒否するか、RTCを変更せずデバッグ応答だけを返す。（現在のfirmwareは`NACK_GNSS_ACTIVE`で拒否する）
+- 現在使用中の時刻源、最終同期時刻、PPS/NMEA状態、RTC有効性をJetsonから取得できるプロトコルを定義する。現在のfirmwareの`TIME_STATUS`が返すのは、UTC、state、flags（RTC有効、GNSS有効、clock fault、LSE ready）、最後に適用したSETのsource_id/sequence、last errorである。時刻源、最終同期時刻、出力のenable状態は返さず、consoleの`status`でだけ見られる。RTC有効性は使用する全backup registerのsignature/versionとpayload CRC、RTC-domain configuration CRC、`INITS`、RTCSEL/LSEON/LSERDY/RTCEN、calendar範囲、SSR単調性で判定し、VBAT電圧の実測値とはしない。`RTC_VALID`は起動時の整合性だけを示し、主電源断中のLSE連続動作や電池残量は保証しない。
 - 内蔵RTC/LSEの起動判定、Jetson SETのstep/slew、GNSS復帰、clock fault処理の正本は[`../hardware/overall/time_source_state_machine.md`](../hardware/overall/time_source_state_machine.md)とする。
 
 ### 4.5 USBデバッグインターフェース
@@ -175,9 +176,10 @@ flowchart LR
 - 内蔵system bootloaderのUSB DFUでファームウェアを書き込めるよう、BOOT操作とRESET操作を基板上で可能にする。
 - ファームウェア異常時のsource-level debugに備え、SWDIO、SWCLK、NRST、3V3、GNDのテストパッドを残す。
 - PA6には唯一の汎用firmware event traceとしてTP9 `TP_FW_TRACE`を残す。SWOではなくGPIO pulse観測用とし、通常firmwareではanalog/no-pull、明示的なdebug buildまたは設定時だけ既定LowのGPIO出力として有効化する。製品機能はTP9へ依存させない。
-- D+/D-には低容量ESD保護と必要に応じて22 Ohm直列抵抗を置き、差動配線を短く等長にする。
-- SW1 RESETとSW2 BOOTには小型Basic `TS-1088-AR02016` / C720477を使用する。PA15の専用DFU buttonおよび予備test padは設けずNCとし、正常時はUSB CDC command、異常時はBOOT+RESETでDFUへ入る。
-- PA14-BOOT0は100 kOhm pull-down、BOOT switch側は1 kOhm seriesとする。製造時に外部BOOT0を使用するoption byteを設定する。NRSTは10 kOhm pull-up、100 nF to GNDとする。
+- D+/D-はU11 `USBLC6-2SC6`で保護し、差動配線を短く等長にする。発注版に直列抵抗はない（U11とMCUを直結）。
+- SW1 RESETとSW2 BOOTには小型Basic `TS-1088-AR02016` / C720477を使用する。PA15の専用DFU buttonおよび予備test padは設けずNCとし、正常時はUSB CDC command、異常時はBOOT+RESETでDFUへ入る設計である。
+- PA14-BOOT0は100 kOhm pull-down、BOOT switch側は1 kOhm seriesとする。NRSTは10 kOhm pull-up、100 nF to GNDとする。
+- 外部BOOT0を使うoption byte（`nBOOT_SEL=0`）は、試験中の2枚では設定していない（出荷時のまま）。このためSW2+SW1ではDFUに入れず、DFUへはconsoleの`dfu` commandで移る。未書込みの基板はUSBをつなぐだけでDFUになる。option byteを設定するかは判断待ちである（[`../firmware/test_plan.md`](../firmware/test_plan.md) P-22）。
 - SWD debug接続後にBOOT+RESETでDFUへ入る場合は、STM32G0B1 errata ES0548 §2.2.8に従い、probeを外してUSBを含む全主電源を完全power cycleしてから操作する。
 
 ### 4.6 GH互換コネクタ割当
@@ -200,7 +202,7 @@ J2/J3/J7/J8の入力ラベルは直列抵抗よりU4側に置き、コネクタ�
 - J3の相手は別の中継基板とし、Jetson 40-pin headerへの配線とpin割当は中継基板で管理する（DR-062）。J3 pin 4は運用では使わない（§3.4）。
 - 本基板をJetson側40-pin headerへ直接搭載しない。中継基板とはGHケーブルで接続する。
 - J7/J8は3.3 V UART専用とし、電源pinを設けない。外部機器への給電が必要になった場合は別コネクタまたは別基板で対応する。
-- J2～J8はCJT A1257シリーズをJLCPCBでPCBA実装する。発注前にassembly fixture費用と在庫を再確認する。
+- J2～J8はCJT A1257シリーズをJLCPCBでPCBA実装する（初回試作はこの構成で実装した）。
 - 相手機器側connector/pin、使用UART、線色、線長はTBDとし、試作ハーネス製作前に[`../hardware/overall/harness_pinout.md`](../hardware/overall/harness_pinout.md)のTODOと導通検査表を完成させる。TBDを推測で埋めない。
 
 ## 5. 信号表
@@ -224,7 +226,8 @@ J2/J3/J7/J8の入力ラベルは直列抵抗よりU4側に置き、コネクタ�
 - Jetsonとの時刻protocol用のUSB CDC（§4.5）。
 - VLP-32C用UARTはUSARTの`TXINV`で反転する。
 - PPS入力キャプチャとPPS生成を1個の32-bitタイマー（TIM2）の2チャネルで実現する。
-- UTC日時処理、NMEA parser/checksum、ウォッチドッグ、brown-out reset。
+- UTC日時処理、NMEA parser/checksum、ウォッチドッグ、brown-out reset。（現在のfirmwareはwatchdogを使っておらず、BORのoption byteも変更していない。P-14）
+- J7/J8のRX（予備UARTの受信）は回路にはあるが、現在の製品firmwareでは使っていない。
 - 製造時書込み用SWD等。
 - 24 MHz HSE bypass、内蔵RTC/LSE、backup register、smooth calibrationを使用する。
 
@@ -244,7 +247,7 @@ clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定し�
 | RTC/calendar | STM32内蔵RTC + 32.768 kHz LSE + CR2032 | PC14/PC15に7 pF品を接続。`LSEDRV=10`、LSE CSS無効。電源断中はcalendar/backup registerを保持する |
 | clock fault | HSE CSS + firmware監視 | HSE/PLL fault時はHSIへ退避するが、PPS/NMEAはHigh-Zとして`FAULT_CLOCK`へ遷移する |
 
-以下の主要部品を採用する。選定経緯は[`considerations.md`](./considerations.md)へ分離し、価格・在庫・ライブラリ区分だけは発注直前に再確認する。
+以下の主要部品を採用し、初回試作に実装した。選定経緯は[`considerations.md`](./considerations.md)へ分離する。価格・在庫は2026-09-06の発注時点の値であり、次版の発注時に再確認する。
 
 ### 6.2 採用主要部品
 
@@ -257,8 +260,8 @@ clock初期化は電源投入後5 ms以上待ち、Voltage Range 1へ設定し�
 | USB ESD | USBLC6-2SC6 | C7519 | USB 2.0対応2-line ESD保護 | 採用。D+/D-コネクタ直近へ実装 |
 
 - U2はpin 1=NC、pin 2=GND、pin 3=OUT、pin 4=`3V3`。U14はpin 1=OUT、2=GND、3=+IN、4=-IN、5=`3V3`とする。C11 AC結合、R5=33 kOhm/R6=15 kOhm/C12の1.031 V reference、R7 bias、C13 decouplingを実装し、U14 pin 1をR8=33 Ohm経由でPF0へ接続する。U15/`+2V8_CLK`は配置しない。
-- C22434890は通常SMT、C544337はExtended/SMTである。DR-050時点の受動部品とclock直列Rを含むclock chainは約$1.8346だったが、DR-053/DR-057で定数とRefDesを変更したため現行価格は発注時に再確認する。
-- JLCPCBのBasic/Promotional区分は変動するため、発注用BOM作成時に公式parts libraryで再確認する。
+- C22434890は通常SMT、C544337はExtended/SMTである。DR-050時点の受動部品とclock直列Rを含むclock chainは約$1.8346だった。
+- JLCPCBのBasic/Promotional区分は変動するため、次版の発注用BOM作成時に公式parts libraryで再確認する。
 - STM32G0B1RCT6は[ST製品情報](https://www.st.com/en/microcontrollers-microprocessors/stm32g0b1rc.html)、データシート`STM32G0B1xB/xC/xE` DS13560 Rev 6および[JLCPCB C3034735](https://jlcpcb.com/partdetail/STMicroelectronics-STM32G0B1RCT6/C3034735)、U2/U14は[YXC YSO510TP family資料](https://www.yxc.hk/uploadfiles/2023/07/20230710175706329.pdf)と[TI LMV7219資料](https://www.ti.com/lit/ds/symlink/lmv7219.pdf)を参照。選定詳細は[`../hardware/reviews/oi010_tcxo_selection.md`](../hardware/reviews/oi010_tcxo_selection.md)を正とする。MCUの在庫切れ対応と代替検証は[`../hardware/reviews/mcu_stock_alternative_20260906.md`](../hardware/reviews/mcu_stock_alternative_20260906.md)を正とする。
 - MCUの`_RB` / `_RC` / `_RE`はDS13560 Rev 6 Table 2で同一列にまとめられ、`VDDIO2 pin / VSS pin = No/No`、GPIO 60、USART 6、LPUART 2、USB 1、32-bit timer 1が共通である。差はFlash容量だけ（128 / 256 / 512 KB）でSRAMはいずれも144 KB。LQFP64のpinout図も1枚しかない。EasyEDAのpackageも旧新ともuuid `2afd511af2e94adea785d3da1efd72a1`（`LQFP-64_L10.0-W10.0-P0.50-LS12.0-BL`）で同一実体であり、**PCBのpad・配線・部品配置およびpin割当は変更しない。** firmware側はlinker scriptのFLASH容量と、Flash容量で変わるdual bankの境界・ページ番号（RM0444）だけ確認する。
 
@@ -339,27 +342,28 @@ GNSS有効中はPPSからTCXOの実偏差を推定し、TIM2のARR補正値と�
 1. 抵抗・コンデンサはユーザーが選定し、Basic Partsを優先する。BOMのR/C用MPN/C-codeは参考候補であり、設計条件と同等以上の互換品を許容する。標準ロジック・汎用レギュレータもBasic Partsを優先する。
 2. MCU、コネクタ、発振器などBasicで揃いにくい部品は、Promotionalを先に比較する。
 3. 役割が同じ部品の値・パッケージを統一し、ユニーク部品点数とExtended Partsの種類数を減らす。
-4. 原則として0402を避け、0603中心とする。実装密度上必要な場合だけ0402を使う。
-5. 片面実装・2層基板を採用し、信号品質とEMCを初回試作で評価する。
+4. 当初は0603中心とする方針だったが、初回試作の受動部品は0402が主体である（C1が0805、C2/C3・R3・D2が0603）。
+5. 片面実装とし、信号品質とEMCを初回試作で評価する。当初は2層基板としていたが、初回試作は4層（Top、Inner1=GND全面、Inner2=信号とGND、Bottom=GND）で発注した。
 6. 非R/C部品のLCSC品番、JLC区分、在庫、単価はBOM確定時に再確認し、設計書へ記録する。R/Cは特定品番の一致ではなく、値、許容差、定格、温度特性、package/footprintの互換性をレビューする。
-7. 初期外形は75 mm x 50 mm。70 mm x 50 mmへの縮小は配線後の余白とJLCPCB実見積りを確認してから行う。
-8. SWD/test padは裏面へ移すが、実装部品は表面だけに置き、Economic PCBAを維持する。
+7. 当初の外形は75 mm x 50 mmとしていたが、初回試作は60 mm x 38 mmで発注した。
+8. 実装部品は表面だけに置き、Economic PCBAを維持する。test padは裏面へ置く方針だったが、初回試作ではTP1～TP9をすべて表面に置いた。
 9. 面積だけを理由にBasic/安価なpackageからExtended/QFNへ変更しない。
+
+次版の外形・層数を発注版に合わせるか当初の値へ戻すかは決めていない（[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md) OI-016）。
 
 ## 7. 製造・運用前提
 
-- 基板外形は75 mm x 50 mmを設計値とし、配線成立性に問題がある場合だけ最大80 mm x 55 mmまで拡大する。
-- J2～J8は一つの長辺、USB Type-Cは短辺へ置く。配置判断の根拠は[`../hardware/reviews/layout_area_cost_review.md`](../hardware/reviews/layout_area_cost_review.md)に保存する。レイアウト作業用の配置・配線ルールと図は[`../hardware/overall/pcb_layout_guidelines.md`](../hardware/overall/pcb_layout_guidelines.md)へ集約する。
+- 初回試作（2026-09-06発注）の基板は60 mm x 38 mm、角R3 mm、4層、片面実装で、取付穴はない。当初の設計値（75 mm x 50 mm、2層、test padは裏面）とは違う。発注版の回路図・PCB図・BOMは[`../hardware/rev1/`](../hardware/rev1/)にある。
+- J2～J8は下の長辺に左から順に並べ、USB Type-Cは右の短辺に置いた。配置判断の根拠は[`../hardware/reviews/layout_area_cost_review.md`](../hardware/reviews/layout_area_cost_review.md)に保存する。レイアウト前に作った配置・配線ルール[`../hardware/overall/pcb_layout_guidelines.md`](../hardware/overall/pcb_layout_guidelines.md)は、外形・層数・test padの面などが発注版と違う。
 - 予備connector J7/J8は要求R-018に基づき維持し、面積削減だけを理由に削除しない。
 - `BS-CR2032-8` / `C7498149`ホルダは表面PCBA実装し、CR2032一次電池セルだけを後付けする。
-- 機能上必要なExtended部品は許容する。PTC/TVSは初回DNP、その他の採用品はPCBA実装とする。
+- 機能上必要なExtended部品は許容する。初回試作はF1（PTC）だけDNPとし、D1（TVS）を含むその他の採用品はPCBA実装した。
 - 初回試作の保証範囲は0～40 ℃、同一ロボット内、保守時のみ抜き差しとする。
-- 回路図・PCB設計の正本はEasyEDA Proプロジェクトとし、各設計節目でlocal archiveを[`../hardware/easyeda/`](../hardware/easyeda/)へ保存する。
-- 既存KiCadファイルは空project scaffoldであり、設計の正本として使用しない。
+- 回路図・PCB設計の正本はEasyEDA Proプロジェクトとする。
+- 発注版の回路図netlistで、MCUの全pinの接続が[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)と一致することを確認した（2026-10）。
 - UM982アンテナ接続・給電は本基板のスコープ外とする。
 - GNSS追従中のPPS位相差は1 us以内を設計目標とし、実装後の校正・測定で保証可否を判定する。
-- 相手機器側ハーネス、RTC有効性の外部報告形式、取付穴・高さは未確定である。テストパッドはDR-055でTP1～TP9へ確定し、TP9だけを汎用firmware trace用として残した。`RTC_VALID/INVALID`の内部判定条件はDR-034、U2/U14採用品番はDR-050で確定済みである。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
-- EasyEDAでMCU symbolを配置した直後に、symbol上のpin番号を[`../hardware/overall/pin_assignment.md`](../hardware/overall/pin_assignment.md)と1本ずつ突き合わせる。版0.20以前のpin番号表には誤りがあったため、表を信用してsymbol確認を省略しない。
+- 相手機器側ハーネス、RTC有効性の外部報告形式、筐体への取付方法・最大高さは未確定である。テストパッドはDR-055でTP1～TP9へ確定し、TP9だけを汎用firmware trace用として残した。`RTC_VALID/INVALID`の内部判定条件はDR-034、U2/U14採用品番はDR-050で確定済みである。詳細と完了期限は[`../hardware/overall/open_issues.md`](../hardware/overall/open_issues.md)を正とする。
 
 ## 8. 検証・合否条件
 

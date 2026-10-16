@@ -24,13 +24,18 @@ consoleのcommand: `help`、`id`（DEV_ID/REV_ID/UID/reset要因）、`clk`、`r
 
 ### 製品firmware（app image）
 
-`firmware/build/target/app.hex`。GNSS（J2: UM982のPPSとRMC）で生成PPSを規律し、J3～J8の6系統へPPSとGPRMC（9600 baud、PPS立上りの200 ms後）を出す。J4（VLP）はTXINVで反転し、UTC+1秒にする。状態遷移と暫定値は[`test_plan.md`](./test_plan.md) §2.1。
+`firmware/build/target/app.hex`。GNSS（J2: UM982のPPSとRMC）で生成PPSを規律し、J3～J8の6系統へPPS（High 100 ms）とGPRMC（9600 baud、PPS立上りの200 ms後）を出す。J4（VLP）はTXINVで反転し、UTC+1秒にする。状態遷移は[`time_source_state_machine.md`](../hardware/overall/time_source_state_machine.md)、まだ暫定の値は[`test_plan.md`](./test_plan.md) §2.1。
 
-- 起動直後は全出力High-Z。GNSSのPPSとstatus `A`のRMCが5秒続き、位相差が1 us以内になるとlockし、出力をenableする
-- GNSSを失うとholdover（PPS継続、RMC=`V`）。GNSSが戻るとslewで合わせてlockへ戻る
+- 起動直後は全出力High-Z。GNSSのPPSとstatus `A`のRMCがそろうと、まず生成PPSをGNSS PPSへstepで揃え、位相差1 us以内が5秒続くとlockして出力をenableする（屋外の実測でPPSとRMCがそろってから約8秒）
+- GNSSを失うとholdover（PPS継続、RMC=`V`）。失ったと判断するのは、RMC=`V`が1回、PPSの欠落が2回続く（lock中は100 usより離れたPPSも欠落と数える）、RMCの無効・欠落が2回続く、のいずれか
+- GNSSが5秒続けて正常に戻ったときの合わせ方は、holdover中の時刻の出どころで変わる。GNSS由来なら位相差100 ms以内はslew（周期の補正は±100 us/秒以内）で合わせ、PPSは止めない。100 ms超か秒が違えば`FAULT`（全出力High-Z。`reinit`かJetsonのSETで抜ける）。RTCまたはJetson由来の時刻で1 ms超か秒が違えば、出力をHigh-Zにしてstepし、2秒正常が続いてから出力を戻す
 - USB CDCが2つ出る。interface 0がconsole（`fwctl.py`はこちらを使う）、interface 2がJetson protocol（[`tools/jetson_time.py`](./tools/jetson_time.py)）
 - GNSSがない場所では、`jetson_time.py set`でPC/Jetsonの時計から時刻を与えると、holdover（RMC=`V`）で出力を始める
 - 時刻は内蔵RTC（LSE）にも書き、CR2032があれば電源OFF中も保持する。起動時にbackup domainを検証し（signature、CRC、RTC設定、calendar範囲、SSRの進み）、合格すればRTCの秒境界へ生成PPSを揃え、RTCの秒が2回続けて一致してからholdover（RMC=`V`）で出力を始める。不合格ならBDRSTして時刻なしで起動する。software reset・DFU書込みでは電源が切れないので電池なしでも保持される
+
+LEDの表示（app）: PPSに合わせて1秒に1回100 ms点灯=GNSSでlock中、1秒に2回点灯=holdover・step中・GNSSへの再同期中、200 ms周期の速い点滅=`FAULT`または`FAULT_CLOCK`、1秒に1回の短い点灯=時刻なし（`INIT_INVALID`）。
+
+異常時の動作: HSE CSS（TCXO系のclock停止）を検出すると印を残してresetし、次の起動はHSIの診断mode（`FAULT_CLOCK`、全出力High-Z）になる。HardFaultとCSS以外のNMIでは、USBから書き直せるように自動でsystem bootloader（DFU）へ移る。
 
 consoleのcommand（bring-upのcommandに加えて）: `status`（state、UTC、出力、DPLL、各TXの送信数、最後に送ったRMC）、`gnss`（受信baud、NMEA数、PPS→RMCの遅れ、位置。`gnss baud 115200`で固定、`gnss auto`で自動。`gnss debug on`で、checksumの合った文を直前のGNSS PPSからの経過付きで、GNSS PPSの位相差と間隔、各RMCを時刻に使ったかとその理由、捨てた文とその理由、baudの切替、毎秒の受信byte数とUART errorを逐一出す。`gnss debug off`で止める。試験用で、hostが読まないと1行ごとに最大5 ms待つ）、`out`（`out off`で全出力High-Z、`out on`で戻す、`out mask 3F`でTXを選ぶ）、`reinit`（`FAULT`などから`INIT_INVALID`へ戻す）。毎秒のlogは状態、UTC、GNSS PPSの位相差（count、1 count=20.8 ns）、RMC status、TCXO偏差の推定を出す。
 
@@ -43,7 +48,7 @@ py -3 -X utf8 firmware/tools/gnss_watch.py            # GNSS受信試験: 毎秒
 
 ### selftest image（test build）
 
-`firmware/build/target/selftest.hex`はbring-upに試験用commandを加えたもの（約100 KB、full newlib）。使い終わったら`bringup.hex`へ戻す。
+`firmware/build/target/selftest.hex`はbring-upに試験用commandを加えたもの（約125 KB、full newlib）。使い終わったら`bringup.hex`へ戻す。
 
 - `ut`: `tests/host/test_*.c`をそのままMCU上で実行する（UT-13、約30秒）。`fwctl.py cmd -t 180 ut`
 - `fault css`: 次の起動をHSE CSSの後と同じclock診断mode（SYSCLK=HSI16、USB=HSI48+CRS）にする。`reset`で通常に戻る
@@ -53,15 +58,15 @@ py -3 -X utf8 firmware/tools/gnss_watch.py            # GNSS受信試験: 毎秒
 
 ### buildと書込み
 
-ARM toolchainはMSYS2の`mingw-w64-x86_64-arm-none-eabi-toolchain`と`mingw-w64-x86_64-ninja`、書込みはSTM32CubeProgrammerを使う（Arm GNU Toolchain 14.2.Rel1のzipとpipの`ninja`でもbuildできる）。STM32CubeProgrammerがない場合、`fwctl.py flash`はdfu-util（環境変数`DFU_UTIL`またはPATH）で`.bin`を書いて読み戻し照合する。どちらもDFU（0483:DF11）にdriverが要る。
+buildにはCMake 3.20以上、Ninja、arm-none-eabi-gccが要る。ARM toolchainはMSYS2の`mingw-w64-x86_64-arm-none-eabi-toolchain`と`mingw-w64-x86_64-ninja`、書込みはSTM32CubeProgrammerを使う（Arm GNU Toolchain 14.2.Rel1のzipとpipの`ninja`でもbuildできる）。`tools/`のscriptはPython 3とpyserialを使う。STM32CubeProgrammerがない場合、`fwctl.py flash`はdfu-util（環境変数`DFU_UTIL`またはPATH）で`.bin`を書いて読み戻し照合する。どちらもDFU（0483:DF11）にdriverが要る。
 
 ```sh
 export PATH="/c/msys64/mingw64/bin:$PATH"
 cmake -S firmware/target -B firmware/build/target -G Ninja
 cmake --build firmware/build/target
 
-py -3 -X utf8 firmware/tools/fwctl.py flash   # DFUが見えていればそのまま、firmwareが動いていればdfu commandで移してから書く
-py -3 -X utf8 firmware/tools/fwctl.py check   # id/clk/regs/ppsを実行し、firmware/test_results/<UID>/へ記録
+py -3 -X utf8 firmware/tools/fwctl.py flash   # 引数なしはbringup.hex。DFUが見えていればそのまま、firmwareが動いていればdfu commandで移してから書く
+py -3 -X utf8 firmware/tools/fwctl.py check   # id/clk/regs/pps/lseを実行し、firmware/test_results/<UID>/へ記録
 py -3 -X utf8 firmware/tools/fwctl.py cmd id  # 任意のcommand
 ```
 
@@ -79,6 +84,7 @@ ST-LINK V2のクローンを使う場合、STM32CubeProgrammerがST-LINKのfirmw
 | module | 内容 | 試験 |
 |---|---|---|
 | [`ts_crc32c`](./core/include/ts_crc32c.h) | CRC32C（Jetson frame、backup payload） | UT-01 |
+| [`ts_dpll`](./core/include/ts_dpll.h) | 生成PPSをGNSS PPSへ合わせるDPLL（周期ARRだけを変えるPI制御、補正は±100 us/秒以内） | UT-10 |
 | [`ts_time`](./core/include/ts_time.h) | UTC暦日時⇔Unix秒、日付繰上げ、RTC範囲 | UT-07、UT-08 |
 | [`ts_nmea`](./core/include/ts_nmea.h) | NMEA受信組立て、checksum検証、RMC解析・生成 | UT-05～UT-07 |
 | [`ts_jetson_proto`](./core/include/ts_jetson_proto.h) | Jetson frameの受信（再同期・timeout）、送信、TIME_SET/TIME_STATUS/ACK、再送判定 | UT-02～UT-04 |
@@ -109,4 +115,4 @@ py -3 -X utf8 firmware/tools/run_host_tests.py -k nmea  # 名前で絞る
 | `0x06` | `NACK_BAD_LENGTH` |
 | `0x07` | `NACK_UNKNOWN_COMMAND` |
 
-`TIME_STATUS`の`last error`は、`0x0000`=none、`0x0001`～`0x00FF`=直近に返したNACKのcode、`0x0101`=frame CRC、`0x0102`=frame length、`0x0103`=frame version、`0x0104`=inter-byte timeout。
+`TIME_STATUS`の`last error`は、`0x0000`=none、`0x0001`～`0x00FF`=直近に返したNACKのcode、`0x0101`=frame CRC、`0x0102`=frame length、`0x0103`=frame version、`0x0104`=inter-byte timeout。一度でもNACKを返すと、以後はframe errorよりNACKのcodeを優先して出し、resetまで消えない。

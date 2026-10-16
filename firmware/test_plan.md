@@ -2,7 +2,12 @@
 
 - 対象: timing_sync_if 初回試作基板（U1 `STM32G0B1RCT6`）と、その上で動作するfirmware
 - 作成日: 2026-10-03
-- 状態: 初版。基板受領済み、firmware未着手
+- 状態: 初版（2026-10-03）の計画に、決まった暫定値（§2.1）を足したもの。firmwareはbring-up、selftest、製品firmware（app）の3 imageを実装済みで、2026-10-03、10-04、10-10に2枚の基板で試験した。試験の結果は基板ごとの記録にある（公開リポジトリには含めていない）
+- 計画と実装の違い（2026-10-17時点）:
+  - L1 host試験は`ts_crc32c`、`ts_dpll`、`ts_jetson_proto`、`ts_nmea`、`ts_time`の5 moduleだけである。状態機械とbackup-domain検証はtarget専用のsource（`timesync.c`、`rtc_keep.c`）にあり、hostでbuildできないので、UT-09とUT-11はhost試験になっていない。UT-12（静的解析）の設定もない。selftestの`ut`（UT-13）も同じ5 moduleだけを実行する
+  - build種別はdebug/test/releaseではなく、bringup/selftest/appの3 imageである。全出力のon/offとTXごとのenable（`out`）はappにもある
+  - T-04の注入機能（bit反転、byte欠落・追加、切断、timeout、CRC不一致）は`jetson_time.py`にまだない。`jetson_time.py`は`status`、`set`、`force-set`、`watch`だけである
+  - 未実装: watchdog（P-14）、Jetsonの有効期限（P-13）、大offset拒否時の現在値などの応答（P-12）、frame errorの連続回数の記録、基板ごとのPPS offsetの保存（P-06）、debug buildとTP9 trace、J7/J8のRXの利用
 - 位置づけ: 試験の**方法・順序・合否条件の出典**をまとめた計画書であり、仕様の正本ではない。合否の数値は下記の正本から引用する。正本で数値が決まっていない項目は§2のTBDとして扱い、本書で勝手に値を決めない
 
 参照する正本:
@@ -213,7 +218,7 @@ L1（UT）はP1と並行して始め、P3開始までに全項目を合格させ
 | UT-02 | Jetson frame解析 | 正常3 command、ゴミbyte後のmagic再同期、version不正、`payload_length` > 48、全長64 byte超、CRC不一致、未定義command、予約bit、inter-byte 19 ms/21 ms、有効frameの全bit位置の1 bit反転、byte欠落・追加、random fuzz 10^6件以上（ASan/UBSan有効） | 不正frameで時刻・RTC・backupの変更要求が一度も出ない。crashしない（protocol） |
 | UT-03 | `TIME_SET`の検証 | nanoseconds境界（999999999/1000000000）、`valid_for_ms` 0/1/5000/5001、期限切れ、Unix秒の範囲（P-17）、同じsequence・同じpayloadの再送、同じsequence・異なるpayload（P-12） | 範囲外を拒否する。同じ再送は同じ応答で二重適用しない（protocol） |
 | UT-04 | 応答のpack | `TIME_STATUS` 26 bytes、little-endian、reserved=0、flags bit3=0、clock diagnostic=0、ACK/NACK 2 bytes | protocolのfield表と一致 |
-| UT-05 | NMEA解析 | 正常RMC（GP/GN）、checksum不一致、`*`欠落、小文字hex、82文字超、途中切れ、status `V`、空のtime/date field、小数秒、`23:59:60`（P-17） | 不正文を有効にしない。status `A`以外をlockの根拠にしない |
+| UT-05 | NMEA解析 | 正常RMC（GP/GN）、checksum不一致、`*`欠落、小文字hex、120文字超（UM982の測位後のRMCは82文字を超えるため、受信は120文字まで受け付ける。P-07）、途中切れ、status `V`、空のtime/date field、小数秒、`23:59:60`（P-17） | 不正文を有効にしない。status `A`以外をlockの根拠にしない |
 | UT-06 | NMEA生成 | field数、checksum、CRLF、82文字以内、status A/V、P-09で決めたfield | NMEA 0183の書式、P-08/P-09 |
 | UT-07 | VLP +1秒 | 2000-01-01～2099-12-31の全日について23:59:59→翌日00:00:00を、独立実装（Python `datetime`で生成した表）と照合する。月末、年末、2/28→2/29→3/1、checksum再計算 | 全件一致（design §8、R-003） |
 | UT-08 | calendar⇔Unix秒変換 | RTC範囲全域の往復変換、境界値 | 全件一致 |
@@ -284,7 +289,7 @@ L1（UT）はP1と並行して始め、P3開始までに全項目を合格させ
 | PP-02 | 生成PPSの波形 | TP6と各コネクタpin 2 | 周期1秒、High幅100 ms、立上りが基準（Q-011） | 全数 |
 | PP-03 | 入力captureのedge | T-01でPPSのパルス幅を10 ms/100 ms/200 msに変えて捕捉位相を比べる | 捕捉位相がパルス幅によらず一定（立下りcaptureで正しいedgeを捉えている。design §4.1） | 代表 |
 | PP-04 | 固定offsetの校正と位相差 | UM982 PPS（J2 pin 2）と各出力pin 2の立上り差を測り、基板ごとのoffsetを求めて保存する（P-06）。校正後に1時間以上計測する | 校正後の絶対値1 us以内（design §8、open_issues）。最大・平均・σを記録 | 全数 |
-| PP-05 | 起動からlockまで | 電源投入からGNSS lockと出力enableまでの時間 | 5回連続検証の後にだけenableする。目安は5～6秒（design §4.1.1） | 代表 |
+| PP-05 | 起動からlockまで | 電源投入からGNSS lockと出力enableまでの時間 | 5回連続検証の後にだけenableする。最初に生成PPSをstepで揃えるので、PPSとRMC=Aがそろってから約8秒（2026-10-10の屋外実測。design §4.1.1） | 代表 |
 | PP-06 | slew制限と異常パルス | `RESYNC`中とlock獲得中のPPS間隔・パルス幅をT-03で全数記録し、NMEAの秒ラベルと照合する | 全間隔が0.999900～1.000100秒。短パルス・二重パルス・欠落・秒の逆行や飛びがゼロ（design §4.1、Q-017） | 代表 |
 | PP-07 | 周波数追従 | T-01のPPS周波数をCK-04の実測範囲を超えて変える | P-01で決めた範囲で追従し、範囲外は異常として扱う | 代表 |
 | PP-08 | GNSS PPSの異常 | T-01でPPSを1回欠落、2回連続欠落、glitch、余分なedge、位相step | 1回欠落ではlock維持、2回連続欠落でholdover。glitchを採用しない。位相stepはP-03に従う（Q-007） | 代表 |
